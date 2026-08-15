@@ -32,7 +32,7 @@ describe("adaptive TUI theme colors", () => {
 		process.env.COLORTERM = "truecolor";
 		delete process.env.COLORFGBG;
 		clearDefaultTerminalColors();
-		initTheme("prime");
+		initTheme("vsurf");
 	});
 
 	afterEach(() => {
@@ -164,7 +164,7 @@ describe("adaptive TUI theme colors", () => {
 		// upward across the background to reach the minimum contrast.
 		expect(Math.abs(extractRgbLuminance(rendered) - 1)).toBeGreaterThanOrEqual(27.5);
 
-		initTheme("prime");
+		initTheme("vsurf");
 	});
 
 	it("falls back across the background when the same-side blend is capped", () => {
@@ -203,7 +203,7 @@ describe("adaptive TUI theme colors", () => {
 		const quantized = ansi256IndexToRgb(Number(match[1]));
 		expect(Math.abs(luminanceRgb(quantized) - 118.9)).toBeGreaterThanOrEqual(27.5);
 
-		initTheme("prime");
+		initTheme("vsurf");
 	});
 
 	it("searches stronger blends when 256-color quantization undershoots", () => {
@@ -227,7 +227,7 @@ describe("adaptive TUI theme colors", () => {
 		if (!match) throw new Error(`Expected 256-color background escape, got: ${JSON.stringify(rendered)}`);
 		expect(Math.abs(luminanceRgb(ansi256IndexToRgb(Number(match[1]))) - 75.5)).toBeGreaterThanOrEqual(27.5);
 
-		initTheme("prime");
+		initTheme("vsurf");
 	});
 
 	it("adapts when 256-color quantization erases the configured contrast", () => {
@@ -251,7 +251,7 @@ describe("adaptive TUI theme colors", () => {
 		if (!match) throw new Error(`Expected 256-color background escape, got: ${JSON.stringify(rendered)}`);
 		expect(Math.abs(luminanceRgb(ansi256IndexToRgb(Number(match[1]))) - 74.6)).toBeGreaterThanOrEqual(27.5);
 
-		initTheme("prime");
+		initTheme("vsurf");
 	});
 
 	it("leaves terminal-defined basic ANSI selection colors alone", () => {
@@ -269,7 +269,7 @@ describe("adaptive TUI theme colors", () => {
 
 		expect(theme.getSelectionBackgroundColor()("x")).toBe(theme.bg("selectedBg", "x"));
 
-		initTheme("prime");
+		initTheme("vsurf");
 	});
 
 	it("derives a contrasting selection when selectedBg uses the terminal default", () => {
@@ -292,7 +292,7 @@ describe("adaptive TUI theme colors", () => {
 		// Terminal background luminance is 31.2; the derived highlight must clear it.
 		expect(Math.abs(luminanceRgb(ansi256IndexToRgb(Number(match[1]))) - 31.2)).toBeGreaterThanOrEqual(27.5);
 
-		initTheme("prime");
+		initTheme("vsurf");
 	});
 
 	it("darkens a light selection background that nearly matches a light terminal background", () => {
@@ -318,6 +318,6 @@ describe("adaptive TUI theme colors", () => {
 		clearDefaultTerminalColors();
 		initTheme(undefined);
 
-		expect(theme.name).toBe("prime");
+		expect(theme.name).toBe("vsurf");
 	});
 });
