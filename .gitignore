@@ -43,3 +43,4 @@ collect.sh
 
 __pycache__/
 *.pyc
+packages/coding-agent/release/

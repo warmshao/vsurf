@@ -4,19 +4,11 @@ This page gets you from install to a useful first VSurf session.
 
 ## Install
 
-Install the latest stable release on Linux or macOS:
+Install the latest stable release from npm (requires Node.js >= 22.8.0):
 
 ```bash
-curl -fsSL https://app.primeintellect.ai/vsurf/install.sh | sh
+npm install -g vsurf
 ```
-
-To try the latest beta built from `main`:
-
-```bash
-curl -fsSL https://app.primeintellect.ai/vsurf/install.sh | sh -s -- beta
-```
-
-Both commands fetch versioned VSurf release artifacts and install the `vsurf` command. The inherited npm workspace identifiers in the source tree are not the public install path.
 
 Then start VSurf in the project directory you want it to work on:
 

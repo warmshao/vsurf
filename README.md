@@ -1,5 +1,5 @@
 <p align="center">
-  <img alt="vsurf" src="assets/brand/vsurf-butterfly.svg" width="220" style="max-width: 100%;">
+  <img alt="vsurf" src="assets/brand/vsurf-logo.svg" width="220" style="max-width: 100%;">
 </p>
 
 <h3 align="center">
@@ -7,8 +7,7 @@ vsurf: A Browser-First RLM Agent
 </h3>
 
 <p align="center">
-  <a href="packages/coding-agent/docs/index.md">Documentation</a> &bull;
-  <a href="https://github.com/warmshao/vsurf/actions/workflows/ci.yml">CI</a>
+  <a href="packages/coding-agent/docs/index.md">Documentation</a> | <a href="README_ZH.md">中文</a>
 </p>
 
 vsurf is an open-source coding and research agent for general and long-running work, with first-class browser automation. Every RLM agent gets its own tab in one shared browser, so multiple agents can work in parallel - each seeing only its own tabs.
@@ -31,14 +30,10 @@ vsurf extends the RLM agent model with a shared real browser (your own Chrome/Ed
 
 Requires Node.js >= 22.8.0. A local Chrome, Edge, or Chromium is recommended for the browser module.
 
-Install from source and register the `vsurf` command:
+Install the `vsurf` command from npm:
 
 ```bash
-git clone https://github.com/warmshao/vsurf.git
-cd vsurf
-npm install
-npm run build
-npm install -g .
+npm install -g vsurf
 ```
 
 Then start vsurf from the repository or directory you want it to work in:
@@ -49,6 +44,16 @@ vsurf
 ```
 
 On first launch, run `/login` to choose a subscription or API-key provider. vsurf works in the current directory and can run commands and modify files there. Use a disposable clone, clean worktree, or another checkpoint you can inspect and restore.
+
+### Build from source
+
+```bash
+git clone https://github.com/warmshao/vsurf.git
+cd vsurf
+npm install
+npm run build
+npm install -g .
+```
 
 To run from a checkout without a global install:
 
@@ -89,7 +94,8 @@ vsurf is built for long-running work, especially with parallel browser agents. T
 - [Usage and CLI reference](packages/coding-agent/docs/usage.md) - commands, sessions, autonomous limits, and output modes
 - [Long-running and background agents](packages/coding-agent/docs/long-running-agents.md) - detach and reattach, goals, heartbeats, and schedules
 - [RLM programming model](packages/coding-agent/docs/rlm.md) - persistent IPython, subagents, skills, and the trust model
-- [Browser runtime](packages/coding-agent/docs/rlm-runtime.md) - shared browser, per-agent tabs, and the Python runtime
+- [RLM runtime](packages/coding-agent/docs/rlm-runtime.md) - shared browser, per-agent tabs, and the Python runtime
+- [Browser](packages/coding-agent/docs/browser.md) - the shared browser daemon: CDP connection, tab ownership, and managed launches
 - [JSON mode](packages/coding-agent/docs/json.md) and [RPC mode](packages/coding-agent/docs/rpc.md) - headless automation and integrations
 - [Skills](packages/coding-agent/docs/skills.md) - install and create reusable capabilities
 - [Provider setup](packages/coding-agent/docs/providers.md) - subscription and API-key providers

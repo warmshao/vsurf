@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://primeintellect.ai">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="../../assets/brand/vsurf-butterfly.svg">
-      <img alt="VSurf logo" src="../../assets/brand/vsurf-butterfly-black.svg" width="88">
+      <source media="(prefers-color-scheme: dark)" srcset="../../assets/brand/vsurf-mark.svg">
+      <img alt="VSurf logo" src="../../assets/brand/vsurf-mark-black.svg" width="88">
     </picture>
   </a>
 </p>

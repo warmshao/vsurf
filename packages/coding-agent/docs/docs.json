@@ -163,6 +163,10 @@
         {
           "title": "RLM Runtime Architecture",
           "path": "rlm-runtime.md"
+        },
+        {
+          "title": "Browserd: Shared Browser Daemon",
+          "path": "browserd.md"
         }
       ]
     }

@@ -4,10 +4,10 @@ VSurf is an RLM-native coding and research harness built around a persistent IPy
 
 ## Quick Start
 
-Install the latest stable release on Linux or macOS:
+Install the latest stable release from npm (requires Node.js >= 22.8.0):
 
 ```bash
-curl -fsSL https://app.primeintellect.ai/vsurf/install.sh | sh
+npm install -g vsurf
 ```
 
 Then run it in a project directory:
@@ -19,7 +19,7 @@ vsurf
 
 Authenticate with `/login` for subscription or stored API-key providers, or set an environment variable such as `ANTHROPIC_API_KEY` before launch. See the [Quickstart](quickstart.md) for the complete first-run flow.
 
-Public releases are currently installed from versioned release artifacts. The inherited npm workspace names in the source tree are implementation details, not the public install path.
+Public releases are installed from npm. The internal workspace package names in the source tree are implementation details, not the public install path.
 
 ## Start Here
 

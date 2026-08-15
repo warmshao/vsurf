@@ -172,6 +172,22 @@ jobs:
             --base-url "$VSURF_DOWNLOAD_BASE_URL" \
             --out-dir packages/coding-agent/release/beta
 
+      - name: Pack npm production release
+        if: env.PUBLISH_PRODUCTION == 'true'
+        run: |
+          npm run release:pack -- \
+            --registry npm \
+            --version "$PRODUCTION_VERSION" \
+            --out-dir packages/coding-agent/release/npm-production
+
+      - name: Pack npm beta release
+        if: env.PUBLISH_BETA == 'true'
+        run: |
+          npm run release:pack -- \
+            --registry npm \
+            --version "$BETA_VERSION" \
+            --out-dir packages/coding-agent/release/npm-beta
+
       - name: Upload production artifacts
         if: env.PUBLISH_PRODUCTION == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -188,11 +204,28 @@ jobs:
           path: packages/coding-agent/release/beta/artifacts/*
           if-no-files-found: error
 
+      - name: Upload npm production packages
+        if: env.PUBLISH_PRODUCTION == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: vsurf-npm-production
+          path: packages/coding-agent/release/npm-production/packages/
+          if-no-files-found: error
+
+      - name: Upload npm beta packages
+        if: env.PUBLISH_BETA == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: vsurf-npm-beta
+          path: packages/coding-agent/release/npm-beta/packages/
+          if-no-files-found: error
+
   publish:
     runs-on: ubuntu-latest
     needs: [release-context, build]
     permissions:
       contents: write
+      id-token: write # npm trusted publishing (OIDC); no NPM_TOKEN required
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       AWS_DEFAULT_REGION: auto
@@ -212,6 +245,13 @@ jobs:
           ref: ${{ env.BUILD_REF }}
           persist-credentials: false
 
+      # Node 24 ships npm >= 11.5.1, which supports OIDC trusted publishing.
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
       - name: Download production artifacts
         if: env.PUBLISH_PRODUCTION == 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -225,6 +265,20 @@ jobs:
         with:
           name: vsurf-beta
           path: release-artifacts/beta
+
+      - name: Download npm production packages
+        if: env.PUBLISH_PRODUCTION == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: vsurf-npm-production
+          path: release-npm/production
+
+      - name: Download npm beta packages
+        if: env.PUBLISH_BETA == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: vsurf-npm-beta
+          path: release-npm/beta
 
       - name: Prepare installer
         run: |
@@ -410,3 +464,47 @@ jobs:
 
           gh release upload beta "$BETA_DIR"/* --clobber
           echo "Beta installer: ${R2_PUBLIC_BASE_URL%/}/install-beta.sh"
+
+      # npm trusted publishing (OIDC) needs no secret; if an NPM_TOKEN secret
+      # exists it is used instead (e.g. before trusted publishers are set up).
+      - name: Publish production to npm
+        if: env.PUBLISH_PRODUCTION == 'true'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        working-directory: release-npm/production
+        run: |
+          set -euo pipefail
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> "${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
+          fi
+          # Internal packages must exist on npm before the vsurf CLI package.
+          for pkg in ai tui agent coding-agent; do
+            name=$(node -p "require('./$pkg/package.json').name")
+            version=$(node -p "require('./$pkg/package.json').version")
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version is already on npm; skipping."
+            else
+              npm publish "./$pkg" --access public
+            fi
+          done
+
+      - name: Publish beta to npm
+        if: env.PUBLISH_BETA == 'true'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        working-directory: release-npm/beta
+        run: |
+          set -euo pipefail
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> "${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
+          fi
+          # Internal packages must exist on npm before the vsurf CLI package.
+          for pkg in ai tui agent coding-agent; do
+            name=$(node -p "require('./$pkg/package.json').name")
+            version=$(node -p "require('./$pkg/package.json').version")
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version is already on npm; skipping."
+            else
+              npm publish "./$pkg" --access public --tag beta
+            fi
+          done

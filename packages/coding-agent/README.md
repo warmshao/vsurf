@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://primeintellect.ai">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="../../assets/brand/vsurf-butterfly.svg">
-      <img alt="VSurf logo" src="../../assets/brand/vsurf-butterfly-black.svg" width="96">
+      <source media="(prefers-color-scheme: dark)" srcset="../../assets/brand/vsurf-mark.svg">
+      <img alt="VSurf logo" src="../../assets/brand/vsurf-mark-black.svg" width="96">
     </picture>
   </a>
 </p>
@@ -42,14 +42,16 @@ VSurf began as a hard fork of [vsurf-mono](https://github.com/badlogic/vsurf-mon
 
 ## Quick Start
 
+Requires Node.js >= 22.8.0.
+
 ```bash
-curl -fsSL https://app.primeintellect.ai/vsurf/install.sh | sh
+npm install -g vsurf
 ```
 
 To install the beta built from the latest commit on `main`:
 
 ```bash
-curl -fsSL https://app.primeintellect.ai/vsurf/install.sh | sh -s -- beta
+npm install -g vsurf@beta
 ```
 
 Authenticate with an API key:
