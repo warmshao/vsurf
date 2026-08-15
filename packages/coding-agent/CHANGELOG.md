@@ -1,5 +1,7 @@
 # Changelog
 
+## [Unreleased]
+
 ## [0.7.3] - 2026-08-15
 
 - Removed the Cloudflare R2 release channel (curl installer, tarball hosting, and release-manifest version checks); releases publish to npm and GitHub Releases only, and update checks read the npm registry dist-tags (`VSURF_NPM_REGISTRY_URL` overrides the registry).
