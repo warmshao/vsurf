@@ -1,8 +1,6 @@
 import { getPiUserAgent } from "./vsurf-user-agent.js";
 
-const DEFAULT_VSURF_DOWNLOAD_BASE_URL = "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev";
-const STABLE_VERSION_MANIFEST_PATH = "latest.json";
-const BETA_VERSION_MANIFEST_PATH = "beta.json";
+const DEFAULT_NPM_REGISTRY_URL = "https://registry.npmjs.org";
 const DEFAULT_VERSION_CHECK_TIMEOUT_MS = 10000;
 
 export interface LatestPiRelease {
@@ -85,40 +83,25 @@ export function isNewerPackageVersion(candidateVersion: string, currentVersion: 
 	return candidateVersion.trim() !== currentVersion.trim();
 }
 
-function getVsurfDownloadBaseUrl(): string {
-	return (process.env.VSURF_DOWNLOAD_BASE_URL?.trim() || DEFAULT_VSURF_DOWNLOAD_BASE_URL).replace(/\/+$/, "");
-}
-
-function normalizeReleaseVersion(version: string): string {
-	return version.trim().replace(/^v/, "");
-}
-
 export function isBetaPackageVersion(version: string): boolean {
 	return !!parsePackageVersion(version)?.prerelease?.match(/^beta(?:\.|$)/);
 }
 
-function getReleaseManifestPath(currentVersion: string): string {
-	return isBetaPackageVersion(currentVersion) ? BETA_VERSION_MANIFEST_PATH : STABLE_VERSION_MANIFEST_PATH;
+function getNpmRegistryUrl(): string {
+	return (process.env.VSURF_NPM_REGISTRY_URL?.trim() || DEFAULT_NPM_REGISTRY_URL).replace(/\/+$/, "");
 }
 
-function resolveReleaseUrl(baseUrl: string, pathOrUrl: string): string | undefined {
-	const trimmed = pathOrUrl.trim();
-	if (!trimmed) return undefined;
-	try {
-		return new URL(trimmed).toString();
-	} catch {
-		return `${baseUrl}/${trimmed.replace(/^\/+/, "")}`;
-	}
-}
-
+// Version discovery reads the npm registry packument, whose dist-tags mark
+// the latest stable and beta releases.
 export async function getLatestPiRelease(
+	packageName: string,
 	currentVersion: string,
 	options: { timeoutMs?: number } = {},
 ): Promise<LatestPiRelease | undefined> {
 	if (process.env.VSURF_SKIP_VERSION_CHECK || process.env.VSURF_OFFLINE) return undefined;
 
-	const baseUrl = getVsurfDownloadBaseUrl();
-	const response = await fetch(`${baseUrl}/${getReleaseManifestPath(currentVersion)}`, {
+	const tag = isBetaPackageVersion(currentVersion) ? "beta" : "latest";
+	const response = await fetch(`${getNpmRegistryUrl()}/${packageName.replace("/", "%2f")}`, {
 		headers: {
 			"User-Agent": getPiUserAgent(currentVersion),
 			accept: "application/json",
@@ -127,42 +110,29 @@ export async function getLatestPiRelease(
 	});
 	if (!response.ok) return undefined;
 
-	const data = (await response.json()) as {
-		package?: unknown;
-		packageName?: unknown;
-		tarball?: unknown;
-		version?: unknown;
-	};
-	if (typeof data.version !== "string" || !data.version.trim()) {
+	const data = (await response.json()) as { "dist-tags"?: Record<string, unknown> };
+	const version = data["dist-tags"]?.[tag];
+	if (typeof version !== "string" || !version.trim()) {
 		return undefined;
 	}
-	const packageName =
-		typeof data.package === "string" && data.package.trim()
-			? data.package.trim()
-			: typeof data.packageName === "string" && data.packageName.trim()
-				? data.packageName.trim()
-				: undefined;
-	const installSpec = typeof data.tarball === "string" ? resolveReleaseUrl(baseUrl, data.tarball) : undefined;
-	const release: LatestPiRelease = { version: normalizeReleaseVersion(data.version) };
-	if (packageName) {
-		release.packageName = packageName;
-	}
-	if (installSpec) {
-		release.installSpec = installSpec;
-	}
-	return release;
+	return {
+		version: version.trim(),
+		packageName,
+		installSpec: `${packageName}@${tag}`,
+	};
 }
 
 export async function getLatestPiVersion(
+	packageName: string,
 	currentVersion: string,
 	options: { timeoutMs?: number } = {},
 ): Promise<string | undefined> {
-	return (await getLatestPiRelease(currentVersion, options))?.version;
+	return (await getLatestPiRelease(packageName, currentVersion, options))?.version;
 }
 
-export async function checkForNewPiVersion(currentVersion: string): Promise<string | undefined> {
+export async function checkForNewPiVersion(packageName: string, currentVersion: string): Promise<string | undefined> {
 	try {
-		const latestVersion = await getLatestPiVersion(currentVersion);
+		const latestVersion = await getLatestPiVersion(packageName, currentVersion);
 		if (latestVersion && isNewerPackageVersion(latestVersion, currentVersion)) {
 			return latestVersion;
 		}

@@ -260,7 +260,7 @@ See [docs/settings.md](docs/settings.md) for all options.
 
 ### Update checks
 
-VSurf stable builds fetch `https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/latest.json` to check whether a newer version exists. Beta builds fetch `beta.json` and remain on the beta channel. Override the base URL with `VSURF_DOWNLOAD_BASE_URL`. Disable version checks with `VSURF_SKIP_VERSION_CHECK=1`.
+VSurf stable builds check the npm registry's `latest` dist-tag to see whether a newer version exists. Beta builds follow the `beta` dist-tag and remain on the beta channel. Override the registry URL with `VSURF_NPM_REGISTRY_URL`. Disable version checks with `VSURF_SKIP_VERSION_CHECK=1`.
 
 Use `--offline` or `VSURF_OFFLINE=1` to disable startup network operations, including update checks and package update checks.
 
@@ -677,11 +677,11 @@ vsurf --thinking high "Solve this complex problem"
 | `VSURF_CODING_AGENT_SESSION_DIR` | Legacy alias for `VSURF_SESSION_DIR` |
 | `VSURF_PACKAGE_DIR` | Override package directory (useful for Nix/Guix where store paths tokenize poorly) |
 | `VSURF_OFFLINE` | Disable startup network operations, including update checks and package update checks |
-| `VSURF_SKIP_VERSION_CHECK` | Skip the VSurf version update check at startup. This prevents the release manifest request |
+| `VSURF_SKIP_VERSION_CHECK` | Skip the VSurf version update check at startup. This prevents the npm registry request |
 | `VSURF_TELEMETRY` | Override pseudonymous aggregate usage analytics with `1`/`true`/`yes` or `0`/`false`/`no` |
 | `VSURF_TELEMETRY_ENDPOINT` | Override the aggregate analytics ingestion endpoint |
 | `DO_NOT_TRACK` | Disable aggregate usage analytics when set to `1`/`true`/`yes` |
-| `VSURF_DOWNLOAD_BASE_URL` | Override the VSurf release manifest and tarball base URL |
+| `VSURF_NPM_REGISTRY_URL` | Override the npm registry URL used for version update checks |
 | `VSURF_CACHE_RETENTION` | Set to `long` for extended prompt cache (Anthropic: 1h, OpenAI: 24h) |
 | `VSURF_API_KEY` | VSurf Inference API key; also used for trace sharing if it has `agent_traces` scope |
 | `VSURF_TRACES_API_KEY` | Prime API key used only for opt-in trace sharing |

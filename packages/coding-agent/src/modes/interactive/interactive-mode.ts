@@ -60,6 +60,7 @@ import {
 	getDebugLogPath,
 	getLogsDir,
 	getShareViewerUrl,
+	PACKAGE_NAME,
 	SELF_UPDATE_INTERACTIVE_CHILD_ENV,
 	SELF_UPDATE_NOT_ATTEMPTED_EXIT_CODE,
 	VERSION,
@@ -1476,7 +1477,7 @@ export class InteractiveMode {
 		// `returnToAgentsView`, which is also set for direct daemon attaches that never
 		// rendered the agents view and still want the in-session fallback.)
 		const ownsGlobalStartupNotices = !this.options.agentsViewOwnsStartupNotices;
-		const newVersionPromise = ownsGlobalStartupNotices ? checkForNewPiVersion(this.version) : undefined;
+		const newVersionPromise = ownsGlobalStartupNotices ? checkForNewPiVersion(PACKAGE_NAME, this.version) : undefined;
 		const packageUpdatesPromise = ownsGlobalStartupNotices
 			? checkForPackageUpdates({
 					cwd: this.getCurrentCwd(),
