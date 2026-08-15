@@ -4,7 +4,7 @@
 // - r2 (default): internal dependencies are rewritten to tarball URLs hosted on
 //   R2, consumed by install.sh via `npm install -g <tarball>`.
 // - npm: internal dependencies are pinned to the exact release version and the
-//   staged packages are published to the npm registry (npm install -g vsurf).
+//   staged packages are published to the npm registry (npm install -g @warmshao/vsurf).
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";

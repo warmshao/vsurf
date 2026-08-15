@@ -33,7 +33,7 @@ vsurf 在 RLM 智能体模型之上扩展了一个共享的真实浏览器（你
 从 npm 安装 `vsurf` 命令：
 
 ```bash
-npm install -g vsurf
+npm install -g @warmshao/vsurf
 ```
 
 然后在希望 vsurf 工作的仓库或目录中启动它：

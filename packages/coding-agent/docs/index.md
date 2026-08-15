@@ -7,7 +7,7 @@ VSurf is an RLM-native coding and research harness built around a persistent IPy
 Install the latest stable release from npm (requires Node.js >= 22.8.0):
 
 ```bash
-npm install -g vsurf
+npm install -g @warmshao/vsurf
 ```
 
 Then run it in a project directory:

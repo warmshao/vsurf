@@ -33,7 +33,7 @@ Requires Node.js >= 22.8.0. A local Chrome, Edge, or Chromium is recommended for
 Install the `vsurf` command from npm:
 
 ```bash
-npm install -g vsurf
+npm install -g @warmshao/vsurf
 ```
 
 Then start vsurf from the repository or directory you want it to work in:

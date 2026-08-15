@@ -45,13 +45,13 @@ VSurf began as a hard fork of [vsurf-mono](https://github.com/badlogic/vsurf-mon
 Requires Node.js >= 22.8.0.
 
 ```bash
-npm install -g vsurf
+npm install -g @warmshao/vsurf
 ```
 
 To install the beta built from the latest commit on `main`:
 
 ```bash
-npm install -g vsurf@beta
+npm install -g @warmshao/vsurf@beta
 ```
 
 Authenticate with an API key:

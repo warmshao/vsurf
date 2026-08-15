@@ -7,7 +7,7 @@ This page gets you from install to a useful first VSurf session.
 Install the latest stable release from npm (requires Node.js >= 22.8.0):
 
 ```bash
-npm install -g vsurf
+npm install -g @warmshao/vsurf
 ```
 
 Then start VSurf in the project directory you want it to work on:
