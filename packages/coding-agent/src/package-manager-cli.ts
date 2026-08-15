@@ -68,7 +68,7 @@ import {
 	DAEMON_WORKER_SUPERVISOR_SOCKET_ENV,
 } from "./modes/daemon/daemon-worker-protocol.js";
 import { shouldUseWindowsShell } from "./utils/child-process.js";
-import { getLatestPiRelease, isNewerPackageVersion } from "./utils/version-check.js";
+import { getLatestPiRelease, isBetaPackageVersion, isNewerPackageVersion } from "./utils/version-check.js";
 
 export type PackageCommand = "install" | "remove" | "update" | "list";
 
@@ -436,7 +436,59 @@ function setSelfUpdateNoChangeExitCode(): void {
 		process.env[SELF_UPDATE_INTERACTIVE_CHILD_ENV] === "1" ? SELF_UPDATE_NOT_ATTEMPTED_EXIT_CODE : undefined;
 }
 
-async function getSelfUpdatePlan(force: boolean): Promise<SelfUpdatePlan> {
+// npm-registry installs (scoped package names) discover new versions from npm
+// itself, so the user's configured registry/mirror is respected. R2 tarball
+// installs keep using the release manifest below.
+async function queryNpmDistTagVersion(npmCommand: string[] | undefined, tag: string): Promise<string | undefined> {
+	const [command = "npm", ...prefixArgs] = npmCommand ?? [];
+	return new Promise((resolvePromise) => {
+		let child: ReturnType<typeof spawn>;
+		try {
+			child = spawn(command, [...prefixArgs, "view", `${PACKAGE_NAME}@${tag}`, "version", "--silent"], {
+				stdio: ["ignore", "pipe", "ignore"],
+				shell: shouldUseWindowsShell(command),
+				windowsHide: true,
+			});
+		} catch {
+			resolvePromise(undefined);
+			return;
+		}
+		let stdout = "";
+		child.stdout?.on("data", (data) => {
+			stdout += data;
+		});
+		child.on("error", () => resolvePromise(undefined));
+		child.on("close", (code) => {
+			resolvePromise(code === 0 ? stdout.trim() || undefined : undefined);
+		});
+	});
+}
+
+async function getNpmSelfUpdatePlan(force: boolean, npmCommand?: string[]): Promise<SelfUpdatePlan | undefined> {
+	const tag = isBetaPackageVersion(VERSION) ? "beta" : "latest";
+	const latestVersion = await queryNpmDistTagVersion(npmCommand, tag);
+	if (!latestVersion) {
+		return undefined;
+	}
+	if (force || isNewerPackageVersion(latestVersion, VERSION)) {
+		return {
+			installSpec: `${PACKAGE_NAME}@${tag}`,
+			packageName: PACKAGE_NAME,
+			shouldRun: true,
+			targetVersion: latestVersion,
+		};
+	}
+	console.log(chalk.green(`${APP_NAME} is already up to date (v${VERSION})`));
+	return { installSpec: PACKAGE_NAME, packageName: PACKAGE_NAME, shouldRun: false };
+}
+
+async function getSelfUpdatePlan(force: boolean, npmCommand?: string[]): Promise<SelfUpdatePlan> {
+	if (PACKAGE_NAME.startsWith("@")) {
+		const npmPlan = await getNpmSelfUpdatePlan(force, npmCommand);
+		if (npmPlan) {
+			return npmPlan;
+		}
+	}
 	try {
 		const latestRelease = await getLatestPiRelease(VERSION);
 		const packageName = latestRelease?.packageName ?? PACKAGE_NAME;
@@ -1568,7 +1620,7 @@ export async function handlePackageCommand(args: string[]): Promise<boolean> {
 					}
 				}
 				if (updateTargetIncludesSelf(target)) {
-					const selfUpdatePlan = await getSelfUpdatePlan(options.force);
+					const selfUpdatePlan = await getSelfUpdatePlan(options.force, selfUpdateNpmCommand);
 					if (!selfUpdatePlan.shouldRun) {
 						setSelfUpdateNoChangeExitCode();
 						return true;

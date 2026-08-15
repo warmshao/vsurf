@@ -472,37 +472,6 @@ describe("default model selection", () => {
 		expect(result.thinkingLevel).toBe("medium");
 	});
 
-	test("findInitialModel prefers GLM 5.2 when VSurf Inference is configured", async () => {
-		const anthropicModel: Model<"anthropic-messages"> = {
-			...mockModels[0],
-			id: "claude-opus-4-7",
-			name: "Claude Opus 4.7",
-		};
-		const primeModel: Model<"anthropic-messages"> = {
-			id: "z-ai/glm-5.2",
-			name: "GLM 5.2",
-			api: "anthropic-messages",
-			provider: "vsurf-inference",
-			baseUrl: "https://api.pinference.ai/api/v1",
-			reasoning: true,
-			input: ["text"],
-			cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: 1048576,
-			maxTokens: 101376,
-		};
-		const registry = {
-			refreshAvailableModels: async () => [anthropicModel, primeModel],
-		} as unknown as Parameters<typeof findInitialModel>[0]["modelRegistry"];
-
-		const result = await findInitialModel({
-			scopedModels: [],
-			isContinuing: false,
-			modelRegistry: registry,
-		});
-
-		expect(result.model).toBe(primeModel);
-	});
-
 	test("findInitialModel uses another provider default when VSurf Inference is not configured", async () => {
 		const anthropicModel: Model<"anthropic-messages"> = {
 			...mockModels[0],

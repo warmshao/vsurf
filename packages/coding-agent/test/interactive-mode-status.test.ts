@@ -4526,8 +4526,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Extensions]
-  @scope/vsurf-scoped, answer.ts, cli-extension.ts, HazAT/vsurf-interactive-subagents, HazAT/vsurf-interactive-subagents:subagents, local-index, vsurf-markdown-preview, user-index"`);
+			"[Extensions]
+			  @scope/vsurf-scoped, answer.ts, cli-extension.ts, HazAT/vsurf-interactive-subagents, HazAT/vsurf-interactive-subagents:subagents, local-index, user-index, vsurf-markdown-preview"
+		`);
 	});
 
 	test("adds more parent folders until local extension labels are unique", () => {

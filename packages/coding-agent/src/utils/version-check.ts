@@ -93,9 +93,12 @@ function normalizeReleaseVersion(version: string): string {
 	return version.trim().replace(/^v/, "");
 }
 
+export function isBetaPackageVersion(version: string): boolean {
+	return !!parsePackageVersion(version)?.prerelease?.match(/^beta(?:\.|$)/);
+}
+
 function getReleaseManifestPath(currentVersion: string): string {
-	const prerelease = parsePackageVersion(currentVersion)?.prerelease;
-	return prerelease?.match(/^beta(?:\.|$)/) ? BETA_VERSION_MANIFEST_PATH : STABLE_VERSION_MANIFEST_PATH;
+	return isBetaPackageVersion(currentVersion) ? BETA_VERSION_MANIFEST_PATH : STABLE_VERSION_MANIFEST_PATH;
 }
 
 function resolveReleaseUrl(baseUrl: string, pathOrUrl: string): string | undefined {
