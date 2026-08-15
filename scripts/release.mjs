@@ -11,9 +11,9 @@
  * 2. Bump version via npm run version:xxx or set an explicit version
  * 3. Update CHANGELOG.md files: [Unreleased] -> [version] - date
  * 4. Commit and tag
- * 5. Publish to npm
- * 6. Add new [Unreleased] section to changelogs
- * 7. Commit
+ * 5. Add new [Unreleased] section to changelogs
+ * 6. Commit
+ * 7. Push main + tag; CI publishes to npm and creates the GitHub release
  */
 
 import { execSync } from "child_process";
@@ -62,7 +62,9 @@ function compareVersions(a, b) {
 }
 
 function shellQuote(value) {
-	return `'${value.replace(/'/g, `'\\''`)}'`;
+	// Double quotes survive both cmd.exe (Windows) and POSIX shells; single
+	// quotes are passed through literally by cmd.exe and break git pathspecs.
+	return `"${value.replace(/"/g, '\\"')}"`;
 }
 
 function stageChangedFiles() {
@@ -178,26 +180,22 @@ run(`git commit -m "Release v${version}"`);
 run(`git tag v${version}`);
 console.log();
 
-// 5. Publish
-console.log("Publishing to npm...");
-run("npm run publish");
-console.log();
-
-// 6. Add new [Unreleased] sections
+// 5. Add new [Unreleased] sections
 console.log("Adding [Unreleased] sections for next cycle...");
 addUnreleasedSection();
 console.log();
 
-// 7. Commit
+// 6. Commit
 console.log("Committing changelog updates...");
 stageChangedFiles();
 run(`git commit -m "Add [Unreleased] section for next cycle"`);
 console.log();
 
-// 8. Push
+// 7. Push; the tag push triggers CI, which publishes to npm and creates the
+// GitHub release.
 console.log("Pushing to remote...");
 run("git push origin main");
 run(`git push origin v${version}`);
 console.log();
 
-console.log(`=== Released v${version} ===`);
+console.log(`=== Released v${version}; CI is publishing it now ===`);
