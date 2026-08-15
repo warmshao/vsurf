@@ -48,21 +48,9 @@ Edit directly or use `/settings` for common options.
 
 ### Update Checks
 
-Stable builds fetch the release manifest at `https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev/latest.json`. Beta builds fetch `beta.json` and continue following beta updates. Override the base URL with `VSURF_DOWNLOAD_BASE_URL`.
+Stable builds check the npm registry's `latest` dist-tag for the published package. Beta builds follow the `beta` dist-tag and continue following beta updates. Override the registry URL with `VSURF_NPM_REGISTRY_URL`.
 
 Set `VSURF_SKIP_VERSION_CHECK=1` to disable the VSurf version update check. Use `--offline` or `VSURF_OFFLINE=1` to disable startup network operations, including update checks and package update checks.
-
-The stable `latest.json` and beta `beta.json` manifests use the same JSON shape:
-
-```json
-{
-  "version": "0.73.1",
-  "package": "vsurf",
-  "tarball": "releases/v0.73.1/vsurf-0.73.1.tgz"
-}
-```
-
-`version` is required. `package` is optional and may also be named `packageName`; it defaults to the current package name. `tarball` is optional; when present, VSurf installs that tarball instead of the package name. Relative tarball paths resolve against `VSURF_DOWNLOAD_BASE_URL`.
 
 ### Pseudonymous usage analytics
 

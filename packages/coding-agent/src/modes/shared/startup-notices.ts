@@ -8,6 +8,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { PACKAGE_NAME } from "../../config.js";
 import { DefaultPackageManager } from "../../core/package-manager.js";
 import type { SettingsManager } from "../../core/settings-manager.js";
 import { checkForNewPiVersion } from "../../utils/version-check.js";
@@ -32,7 +33,7 @@ export interface StartupNoticeCheckOptions {
 /** Run every startup check in parallel and collect the results. */
 export async function gatherStartupNotices(options: StartupNoticeCheckOptions): Promise<StartupNotices> {
 	const [newVersion, packageUpdates, tmuxWarning] = await Promise.all([
-		checkForNewPiVersion(options.version),
+		checkForNewPiVersion(PACKAGE_NAME, options.version),
 		checkForPackageUpdates(options),
 		checkTmuxKeyboardSetup(),
 	]);

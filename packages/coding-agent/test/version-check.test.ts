@@ -8,10 +8,11 @@ import {
 	isNewerPackageVersion,
 } from "../src/utils/version-check.js";
 
-const defaultVsurfDownloadBaseUrl = "https://pub-728493de92a943e2a9b2d17b4719f318.r2.dev";
+const defaultNpmRegistryUrl = "https://registry.npmjs.org";
+const packageName = "@warmshao/vsurf";
 const originalSkipVersionCheck = process.env.VSURF_SKIP_VERSION_CHECK;
 const originalOffline = process.env.VSURF_OFFLINE;
-const originalVsurfDownloadBaseUrl = process.env.VSURF_DOWNLOAD_BASE_URL;
+const originalNpmRegistryUrl = process.env.VSURF_NPM_REGISTRY_URL;
 
 function restoreEnv(name: string, value: string | undefined): void {
 	if (value === undefined) {
@@ -21,11 +22,15 @@ function restoreEnv(name: string, value: string | undefined): void {
 	process.env[name] = value;
 }
 
+function packumentResponse(distTags: Record<string, string>): Response {
+	return Response.json({ "dist-tags": distTags });
+}
+
 afterEach(() => {
 	vi.unstubAllGlobals();
 	restoreEnv("VSURF_SKIP_VERSION_CHECK", originalSkipVersionCheck);
 	restoreEnv("VSURF_OFFLINE", originalOffline);
-	restoreEnv("VSURF_DOWNLOAD_BASE_URL", originalVsurfDownloadBaseUrl);
+	restoreEnv("VSURF_NPM_REGISTRY_URL", originalNpmRegistryUrl);
 });
 
 describe("version checks", () => {
@@ -46,20 +51,20 @@ describe("version checks", () => {
 	});
 
 	it("returns only newer versions", async () => {
-		const fetchMock = vi.fn(async () => Response.json({ version: "v1.2.3" }));
+		const fetchMock = vi.fn(async () => packumentResponse({ latest: "1.2.3" }));
 		vi.stubGlobal("fetch", fetchMock);
 
-		await expect(checkForNewPiVersion("1.2.3")).resolves.toBeUndefined();
-		await expect(checkForNewPiVersion("1.2.2")).resolves.toBe("1.2.3");
+		await expect(checkForNewPiVersion(packageName, "1.2.3")).resolves.toBeUndefined();
+		await expect(checkForNewPiVersion(packageName, "1.2.2")).resolves.toBe("1.2.3");
 	});
 
-	it("uses the VSurf release manifest with a VSurf user agent", async () => {
-		const fetchMock = vi.fn(async () => Response.json({ version: "v1.2.4" }));
+	it("reads the latest dist-tag from the npm packument with a VSurf user agent", async () => {
+		const fetchMock = vi.fn(async () => packumentResponse({ latest: "1.2.4" }));
 		vi.stubGlobal("fetch", fetchMock);
 
-		await expect(getLatestPiVersion("1.2.3")).resolves.toBe("1.2.4");
+		await expect(getLatestPiVersion(packageName, "1.2.3")).resolves.toBe("1.2.4");
 		expect(fetchMock).toHaveBeenCalledWith(
-			`${defaultVsurfDownloadBaseUrl}/latest.json`,
+			`${defaultNpmRegistryUrl}/@warmshao%2fvsurf`,
 			expect.objectContaining({
 				headers: expect.objectContaining({
 					"User-Agent": expect.stringMatching(/^vsurf\/1\.2\.3 /),
@@ -69,27 +74,22 @@ describe("version checks", () => {
 		);
 	});
 
-	it("keeps beta installations on the beta release manifest", async () => {
-		const fetchMock = vi.fn(async () => Response.json({ version: "v1.2.4-beta.124.1.abcdef0" }));
+	it("keeps beta installations on the beta dist-tag", async () => {
+		const fetchMock = vi.fn(async () => packumentResponse({ latest: "1.2.4", beta: "1.2.4-beta.124.1.abcdef0" }));
 		vi.stubGlobal("fetch", fetchMock);
 
-		await expect(getLatestPiVersion("1.2.4-beta.123.1.1234567")).resolves.toBe("1.2.4-beta.124.1.abcdef0");
-		expect(fetchMock).toHaveBeenCalledWith(`${defaultVsurfDownloadBaseUrl}/beta.json`, expect.any(Object));
+		await expect(getLatestPiVersion(packageName, "1.2.4-beta.123.1.1234567")).resolves.toBe(
+			"1.2.4-beta.124.1.abcdef0",
+		);
 	});
 
-	it("returns the active package and tarball install spec from the release manifest", async () => {
-		const fetchMock = vi.fn(async () =>
-			Response.json({
-				package: "vsurf",
-				tarball: "releases/v1.2.4/vsurf-1.2.4.tgz",
-				version: "v1.2.4",
-			}),
-		);
+	it("returns the dist-tag install spec from the packument", async () => {
+		const fetchMock = vi.fn(async () => packumentResponse({ latest: "1.2.4" }));
 		vi.stubGlobal("fetch", fetchMock);
 
-		await expect(getLatestPiRelease("1.2.3")).resolves.toEqual({
-			installSpec: `${defaultVsurfDownloadBaseUrl}/releases/v1.2.4/vsurf-1.2.4.tgz`,
-			packageName: "vsurf",
+		await expect(getLatestPiRelease(packageName, "1.2.3")).resolves.toEqual({
+			installSpec: "@warmshao/vsurf@latest",
+			packageName: "@warmshao/vsurf",
 			version: "1.2.4",
 		});
 	});
@@ -99,7 +99,7 @@ describe("version checks", () => {
 		const fetchMock = vi.fn();
 		vi.stubGlobal("fetch", fetchMock);
 
-		await expect(getLatestPiVersion("1.2.3")).resolves.toBeUndefined();
+		await expect(getLatestPiVersion(packageName, "1.2.3")).resolves.toBeUndefined();
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 });

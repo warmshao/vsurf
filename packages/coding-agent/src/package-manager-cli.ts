@@ -68,7 +68,7 @@ import {
 	DAEMON_WORKER_SUPERVISOR_SOCKET_ENV,
 } from "./modes/daemon/daemon-worker-protocol.js";
 import { shouldUseWindowsShell } from "./utils/child-process.js";
-import { getLatestPiRelease, isBetaPackageVersion, isNewerPackageVersion } from "./utils/version-check.js";
+import { isBetaPackageVersion, isNewerPackageVersion } from "./utils/version-check.js";
 
 export type PackageCommand = "install" | "remove" | "update" | "list";
 
@@ -483,31 +483,13 @@ async function getNpmSelfUpdatePlan(force: boolean, npmCommand?: string[]): Prom
 }
 
 async function getSelfUpdatePlan(force: boolean, npmCommand?: string[]): Promise<SelfUpdatePlan> {
-	if (PACKAGE_NAME.startsWith("@")) {
-		const npmPlan = await getNpmSelfUpdatePlan(force, npmCommand);
-		if (npmPlan) {
-			return npmPlan;
-		}
+	const npmPlan = await getNpmSelfUpdatePlan(force, npmCommand);
+	if (npmPlan) {
+		return npmPlan;
 	}
-	try {
-		const latestRelease = await getLatestPiRelease(VERSION);
-		const packageName = latestRelease?.packageName ?? PACKAGE_NAME;
-		const installSpec = latestRelease?.installSpec ?? packageName;
-		const packageRenameRequiresUpdate = !latestRelease?.installSpec && packageName !== PACKAGE_NAME;
-		if (
-			force ||
-			!latestRelease ||
-			packageRenameRequiresUpdate ||
-			isNewerPackageVersion(latestRelease.version, VERSION)
-		) {
-			return { installSpec, packageName, shouldRun: true, targetVersion: latestRelease?.version };
-		}
-	} catch {
-		return { installSpec: PACKAGE_NAME, packageName: PACKAGE_NAME, shouldRun: true };
-	}
-
-	console.log(chalk.green(`${APP_NAME} is already up to date (v${VERSION})`));
-	return { installSpec: PACKAGE_NAME, packageName: PACKAGE_NAME, shouldRun: false };
+	// The registry is unreachable (offline, mirror outage); try reinstalling
+	// the current package spec anyway so explicit updates still attempt it.
+	return { installSpec: PACKAGE_NAME, packageName: PACKAGE_NAME, shouldRun: true };
 }
 
 async function runSelfUpdate(command: SelfUpdateCommand): Promise<void> {

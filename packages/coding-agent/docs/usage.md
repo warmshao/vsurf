@@ -356,8 +356,8 @@ vsurf --tools ipython -p "Review the code"
 | `VSURF_CODING_AGENT_SESSION_DIR` | Legacy alias for `VSURF_SESSION_DIR` |
 | `VSURF_PACKAGE_DIR` | Override package directory, useful for Nix/Guix store paths |
 | `VSURF_OFFLINE` | Disable startup network operations, including update checks and package update checks |
-| `VSURF_SKIP_VERSION_CHECK` | Skip the VSurf version update check at startup. This prevents the release manifest request |
-| `VSURF_DOWNLOAD_BASE_URL` | Override the VSurf release manifest and tarball base URL |
+| `VSURF_SKIP_VERSION_CHECK` | Skip the VSurf version update check at startup. This prevents the npm registry request |
+| `VSURF_NPM_REGISTRY_URL` | Override the npm registry URL used for version update checks |
 | `VSURF_CACHE_RETENTION` | Set to `long` for extended prompt cache where supported |
 | `VSURF_API_KEY` | VSurf Inference API key; also used for trace sharing when it has `agent_traces` scope |
 | `VSURF_TRACES_API_KEY` | Prime API key used only for opt-in trace sharing |

@@ -1,10 +1,8 @@
 #!/usr/bin/env node
 
-// Packs the release in one of two modes:
-// - r2 (default): internal dependencies are rewritten to tarball URLs hosted on
-//   R2, consumed by install.sh via `npm install -g <tarball>`.
-// - npm: internal dependencies are pinned to the exact release version and the
-//   staged packages are published to the npm registry (npm install -g @warmshao/vsurf).
+// Packs the release for the npm registry: internal dependencies are pinned to
+// the exact release version and the staged packages under <out-dir>/packages/*
+// are published in dependency order: ai, tui, agent, coding-agent.
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -23,62 +21,31 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const defaultOutputDir = join(root, "packages", "coding-agent", "release");
-const defaultBaseUrl = process.env.VSURF_DOWNLOAD_BASE_URL;
 const publicCommandName = process.env.VSURF_CMD || "vsurf";
-const releaseChannels = new Set(["stable", "beta"]);
-const registries = new Set(["r2", "npm"]);
 
 const releasePackages = [
-	{ packageDir: "ai", artifactName: "vsurf-ai" },
-	{ packageDir: "tui", artifactName: "vsurf-tui" },
-	{ packageDir: "agent", artifactName: "vsurf-core" },
-	{ packageDir: "coding-agent", artifactName: "vsurf" },
+	{ packageDir: "ai" },
+	{ packageDir: "tui" },
+	{ packageDir: "agent" },
+	{ packageDir: "coding-agent" },
 ];
 
 // The unscoped "vsurf" name is blocked on npm (too similar to the existing
-// "csurf" package), so npm releases publish the CLI under the owner's scope.
-// The installed command is still "vsurf".
-function publicPackageName(registry) {
-	return process.env.VSURF_PACKAGE_NAME || (registry === "npm" ? "@warmshao/vsurf" : "vsurf");
+// "csurf" package), so the CLI is published under the owner's scope. The
+// installed command is still "vsurf".
+function publicPackageName() {
+	return process.env.VSURF_PACKAGE_NAME || "@warmshao/vsurf";
 }
 
 function parseArgs(args) {
 	const parsed = {
-		baseUrl: defaultBaseUrl,
-		channel: "stable",
 		outDir: defaultOutputDir,
-		registry: "r2",
 		version: undefined,
 	};
 
 	for (let i = 0; i < args.length; i += 1) {
 		const arg = args[i];
 		switch (arg) {
-			case "--registry": {
-				const value = args[i + 1];
-				if (!value || !registries.has(value)) {
-					throw new Error("--registry must be r2 or npm");
-				}
-				parsed.registry = value;
-				i += 1;
-				break;
-			}
-			case "--channel": {
-				const value = args[i + 1];
-				if (!value || !releaseChannels.has(value)) {
-					throw new Error("--channel must be stable or beta");
-				}
-				parsed.channel = value;
-				i += 1;
-				break;
-			}
-			case "--base-url": {
-				const value = args[i + 1];
-				if (!value) throw new Error("--base-url requires a value");
-				parsed.baseUrl = value;
-				i += 1;
-				break;
-			}
 			case "--out-dir": {
 				const value = args[i + 1];
 				if (!value) throw new Error("--out-dir requires a value");
@@ -103,32 +70,16 @@ function parseArgs(args) {
 		}
 	}
 
-	if (parsed.registry === "r2" && !parsed.baseUrl) {
-		throw new Error("--base-url or VSURF_DOWNLOAD_BASE_URL is required for the r2 registry");
-	}
-
-	if (parsed.baseUrl) {
-		parsed.baseUrl = parsed.baseUrl.replace(/\/+$/, "");
-	}
 	return parsed;
 }
 
 function printHelp() {
-	console.log(`Usage: node scripts/pack-vsurf-release.mjs [--registry r2|npm] [--base-url url] [--channel stable|beta] [--version x.y.z] [--out-dir path]
+	console.log(`Usage: node scripts/pack-vsurf-release.mjs [--version x.y.z] [--out-dir path]
 
-Creates private npm tarballs for R2 distribution (default):
+Stages the release packages for npm publishing:
 
-  <out-dir>/artifacts/vsurf-<version>.tgz
-  <out-dir>/artifacts/vsurf-ai-<version>.tgz
-  <out-dir>/artifacts/vsurf-agent-<version>.tgz
-  <out-dir>/artifacts/vsurf-tui-<version>.tgz
-  <out-dir>/artifacts/SHA256SUMS
-  <out-dir>/artifacts/<channel>
-  <out-dir>/artifacts/latest.json (stable) or beta.json (beta)
-
-With --registry npm, internal dependencies are pinned to the exact release
-version and the staged packages under <out-dir>/packages/* are published to
-the npm registry in dependency order: ai, tui, agent, coding-agent.
+  <out-dir>/packages/{ai,tui,agent,coding-agent}  staged package directories
+  <out-dir>/artifacts/*.tgz                        npm pack tarballs
 `);
 }
 
@@ -181,15 +132,11 @@ function npmTarballName(packageName, version) {
 	return `${packageName.replace(/^@/, "").replace("/", "-")}-${version}.tgz`;
 }
 
-function releaseTarballUrl(baseUrl, version, tarballFile) {
-	return `${baseUrl}/releases/v${version}/${tarballFile}`;
-}
-
-function rewriteInternalDependencies(dependencies, internalPackageRefs) {
+function pinInternalDependencies(dependencies, internalPackageVersions) {
 	if (!dependencies) return undefined;
 	const rewritten = {};
 	for (const [name, range] of Object.entries(dependencies)) {
-		rewritten[name] = internalPackageRefs.get(name) || range;
+		rewritten[name] = internalPackageVersions.get(name) || range;
 	}
 	return rewritten;
 }
@@ -201,13 +148,13 @@ function releaseScripts(sourceScripts) {
 	};
 }
 
-function createReleasePackageJson(sourcePackage, packageName, releaseVersion, internalPackageRefs, isPublicCli) {
+function createReleasePackageJson(sourcePackage, packageName, releaseVersion, internalPackageVersions, isPublicCli) {
 	const packageJson = {
 		...sourcePackage,
 		name: packageName,
 		version: releaseVersion,
-		dependencies: rewriteInternalDependencies(sourcePackage.dependencies, internalPackageRefs),
-		optionalDependencies: rewriteInternalDependencies(sourcePackage.optionalDependencies, internalPackageRefs),
+		dependencies: pinInternalDependencies(sourcePackage.dependencies, internalPackageVersions),
+		optionalDependencies: pinInternalDependencies(sourcePackage.optionalDependencies, internalPackageVersions),
 		scripts: releaseScripts(sourcePackage.scripts),
 	};
 
@@ -276,47 +223,28 @@ function main() {
 	);
 	const cliPackage = sourcePackages.get("coding-agent");
 	const releaseVersion = args.version || normalizeVersion(process.env.VSURF_VERSION || cliPackage.version);
-	const cliPublicName = publicPackageName(args.registry);
+	const cliPublicName = publicPackageName();
 
 	for (const releasePackage of releasePackages) {
 		requireBuiltPackage(releasePackage.packageDir);
 	}
 
-	// Dependency keys stay on the source package names so existing compiled imports
-	// keep resolving. In r2 mode the release values are branded tarball URLs; in npm
-	// mode they are the exact release version and packages keep their source names
-	// so registry resolution works.
-	const sourcePackageNames = new Map();
+	// Internal packages keep their source names so dependency keys match the
+	// published packages; only the CLI is renamed to the public scoped name.
 	const packageNames = new Map();
 	const artifactFiles = new Map();
 	for (const releasePackage of releasePackages) {
 		const sourcePackage = sourcePackages.get(releasePackage.packageDir);
-		const packageName =
-			releasePackage.packageDir === "coding-agent"
-				? cliPublicName
-				: args.registry === "npm"
-					? sourcePackage.name
-					: releasePackage.artifactName || sourcePackage.name;
-		sourcePackageNames.set(releasePackage.packageDir, sourcePackage.name);
+		const packageName = releasePackage.packageDir === "coding-agent" ? cliPublicName : sourcePackage.name;
 		packageNames.set(releasePackage.packageDir, packageName);
-		artifactFiles.set(
-			releasePackage.packageDir,
-			npmTarballName(
-				args.registry === "npm" ? packageName : releasePackage.artifactName || packageName,
-				releaseVersion,
-			),
-		);
+		artifactFiles.set(releasePackage.packageDir, npmTarballName(packageName, releaseVersion));
 	}
 
-	const internalPackageRefs = new Map();
+	const internalPackageVersions = new Map();
 	for (const releasePackage of releasePackages) {
 		if (releasePackage.packageDir === "coding-agent") continue;
-		const sourcePackageName = sourcePackageNames.get(releasePackage.packageDir);
-		const artifactFile = artifactFiles.get(releasePackage.packageDir);
-		internalPackageRefs.set(
-			sourcePackageName,
-			args.registry === "npm" ? releaseVersion : releaseTarballUrl(args.baseUrl, releaseVersion, artifactFile),
-		);
+		const sourcePackage = sourcePackages.get(releasePackage.packageDir);
+		internalPackageVersions.set(sourcePackage.name, releaseVersion);
 	}
 
 	const stagingRoot = join(args.outDir, "packages");
@@ -335,7 +263,7 @@ function main() {
 			sourcePackage,
 			packageName,
 			releaseVersion,
-			internalPackageRefs,
+			internalPackageVersions,
 			releasePackage.packageDir === "coding-agent",
 		);
 
@@ -375,32 +303,8 @@ function main() {
 	}
 
 	tarballs.sort((left, right) => left.file.localeCompare(right.file));
-	if (args.registry === "npm") {
-		for (const tarball of tarballs) {
-			console.log(`Staged ${tarball.name}@${releaseVersion} (${join(artifactsDir, tarball.file)})`);
-		}
-		return;
-	}
-
-	writeFileSync(
-		join(artifactsDir, "SHA256SUMS"),
-		tarballs.map((tarball) => `${tarball.sha256}  ${tarball.file}`).join("\n") + "\n",
-	);
-	writeFileSync(join(artifactsDir, args.channel), `v${releaseVersion}\n`);
-	const manifestName = args.channel === "stable" ? "latest.json" : "beta.json";
-	writeJson(join(artifactsDir, manifestName), {
-		version: `v${releaseVersion}`,
-		package: cliPublicName,
-		tarball: `releases/v${releaseVersion}/${artifactFiles.get("coding-agent")}`,
-		tarballs: tarballs.map((tarball) => ({
-			package: tarball.name,
-			file: tarball.file,
-			sha256: tarball.sha256,
-		})),
-	});
-
 	for (const tarball of tarballs) {
-		console.log(`Created ${join(artifactsDir, tarball.file)}`);
+		console.log(`Staged ${tarball.name}@${releaseVersion} (${join(artifactsDir, tarball.file)})`);
 	}
 }
 
