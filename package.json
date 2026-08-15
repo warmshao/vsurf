@@ -59,5 +59,8 @@
 			"rimraf": "6.1.2"
 		},
 		"shell-quote": "^1.10.0"
+	},
+	"bin": {
+		"vsurf": "packages/coding-agent/dist/bundle/cli.js"
 	}
 }
