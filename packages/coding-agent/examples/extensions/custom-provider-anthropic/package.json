@@ -1,7 +1,7 @@
 {
   "name": "vsurf-extension-custom-provider-anthropic",
   "private": true,
-  "version": "0.0.2",
+  "version": "0.7.4",
   "type": "module",
   "scripts": {
     "clean": "echo 'nothing to clean'",
