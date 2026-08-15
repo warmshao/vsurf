@@ -1,3 +1,4 @@
+import { cpus } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolveKernelBootConcurrency } from "../src/core/kernel/boot-gate.js";
 
@@ -32,5 +33,16 @@ describe("resolveKernelBootConcurrency", () => {
 		expect(auto).toBeLessThanOrEqual(128);
 		process.env[ENV] = "999999";
 		expect(resolveKernelBootConcurrency()).toBe(128);
+	});
+
+	it("caps the auto default lower on Windows (cold boots thrash under fan-out)", () => {
+		if (process.platform !== "win32") return;
+		// cores/2, floored at 2, capped at 8 — the disk/AV bottleneck behind cold
+		// boots does not scale with core count, so the cap must not either.
+		const expected = Math.min(8, Math.max(2, Math.floor((cpus().length || 4) / 2)));
+		expect(resolveKernelBootConcurrency()).toBe(expected);
+		// An explicit override still wins over the Windows default.
+		process.env[ENV] = "12";
+		expect(resolveKernelBootConcurrency()).toBe(12);
 	});
 });
