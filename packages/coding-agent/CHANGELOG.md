@@ -1,5 +1,7 @@
 # Changelog
 
+## [Unreleased]
+
 ## [0.7.4] - 2026-08-15
 
 - Fixed concurrent subagent fan-out on Windows tripping the 5s kernel port-resolve window: the boot gate now defaults to a much lower concurrency on win32 (`min(8, max(2, cores/2))` — Windows cold boots pay full CreateProcess + per-process imports, and the disk/AV bottleneck behind them does not scale with core count), the resolve timeout is configurable via `VSURF_KERNEL_PORTS_TIMEOUT_MS` (default 5s, 15s on Windows), and a kernel that is still alive past the window is given up to 60s to finish booting instead of being killed and cold-restarted by the retry.
