@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Added npm-registry self-update for `vsurf update`: npm-installed copies (scoped package name) now discover and install updates from the npm registry, respecting the user's configured registry or mirror, instead of the release-manifest channel used by tarball installs.
 - Fixed fullscreen wheel scrolling in Ghostty while retaining application link clicks; set `terminal.fullscreenMouse` to `false` to use native Cmd-click instead.
 - Changed the agents view to sort idle and inactive sessions by last message time, newest first, while keeping running agents in stable creation order.
 - Fixed `openai-codex` models being invisible to `rlm` subagents and `find_models` because model discovery reported VSurf's own version as the Codex client version ([#1375](https://github.com/warmshao/vsurf/pull/1375) by [@bilelrais](https://github.com/bilelrais)).

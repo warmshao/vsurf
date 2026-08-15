@@ -4,6 +4,7 @@ import {
 	comparePackageVersions,
 	getLatestPiRelease,
 	getLatestPiVersion,
+	isBetaPackageVersion,
 	isNewerPackageVersion,
 } from "../src/utils/version-check.js";
 
@@ -35,6 +36,13 @@ describe("version checks", () => {
 		expect(comparePackageVersions("0.70.5-beta.10.1.abcdef0", "0.70.5-beta.9.1.1234567")).toBeGreaterThan(0);
 		expect(isNewerPackageVersion("0.70.5", "0.70.5")).toBe(false);
 		expect(isNewerPackageVersion("0.70.6", "0.70.5")).toBe(true);
+	});
+
+	it("detects beta package versions", () => {
+		expect(isBetaPackageVersion("1.2.4-beta.123.1.1234567")).toBe(true);
+		expect(isBetaPackageVersion("1.2.4-beta")).toBe(true);
+		expect(isBetaPackageVersion("1.2.4")).toBe(false);
+		expect(isBetaPackageVersion("1.2.4-rc.1")).toBe(false);
 	});
 
 	it("returns only newer versions", async () => {
