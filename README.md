@@ -36,6 +36,12 @@ Install the `vsurf` command from npm:
 npm install -g @warmshao/vsurf
 ```
 
+To try the latest beta built from `main`:
+
+```bash
+npm install -g @warmshao/vsurf@beta
+```
+
 Then start vsurf from the repository or directory you want it to work in:
 
 ```bash

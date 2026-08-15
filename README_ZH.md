@@ -36,6 +36,12 @@ vsurf 在 RLM 智能体模型之上扩展了一个共享的真实浏览器（你
 npm install -g @warmshao/vsurf
 ```
 
+如果想尝鲜基于 `main` 分支构建的最新 beta：
+
+```bash
+npm install -g @warmshao/vsurf@beta
+```
+
 然后在希望 vsurf 工作的仓库或目录中启动它：
 
 ```bash
