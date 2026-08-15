@@ -6,6 +6,12 @@ import { isForkServerEnabled } from "./fork-server.js";
 // fan-out can't thrash the FS past the port-resolve window.
 const DEFAULT_KERNEL_BOOT_CONCURRENCY = Math.min(16, Math.max(4, (cpus().length || 4) * 2));
 const MAX_KERNEL_BOOT_CONCURRENCY = 64;
+// Windows has no fork: every boot is a cold CreateProcess plus a full per-process
+// import (ipykernel, tornado, zmq...), and AV real-time scanning makes N
+// concurrent cold imports thrash far earlier than on Linux. The Linux default
+// (16 on a 12-core box) reliably pushes a single kernel's port binding past the
+// resolve window, so cap win32 much lower — fan-out boots queue in waves instead.
+const WINDOWS_KERNEL_BOOT_CONCURRENCY = Math.max(2, Math.floor((cpus().length || 4) / 3));
 // Fork-per-child is ~ms and bypasses the FS, so we can admit well past the
 // direct-spawn cap. But fork only removes the *import* cost — every admitted
 // kernel still starts a live ioloop + heartbeat thread + rlm bootstrap, and
@@ -21,7 +27,11 @@ const FORKSERVER_KERNEL_BOOT_CONCURRENCY = Math.min(
 
 export function resolveKernelBootConcurrency(): number {
 	const raw = process.env.VSURF_MAX_CONCURRENT_KERNEL_BOOTS;
-	const fallback = isForkServerEnabled() ? FORKSERVER_KERNEL_BOOT_CONCURRENCY : DEFAULT_KERNEL_BOOT_CONCURRENCY;
+	const fallback = isForkServerEnabled()
+		? FORKSERVER_KERNEL_BOOT_CONCURRENCY
+		: process.platform === "win32"
+			? WINDOWS_KERNEL_BOOT_CONCURRENCY
+			: DEFAULT_KERNEL_BOOT_CONCURRENCY;
 	if (raw === undefined || !/^\d+$/.test(raw)) {
 		return fallback;
 	}

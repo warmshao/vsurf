@@ -24,7 +24,35 @@ import {
 
 const DELIM = Buffer.from("<IDS|MSG>");
 const PROTOCOL_VERSION = "5.3";
-const PORTS_RESOLVE_TIMEOUT_MS = 5000;
+const DEFAULT_PORTS_RESOLVE_TIMEOUT_MS = 5000;
+// Windows cold boots pay full CreateProcess + per-process imports (no fork); under
+// a fan-out the 5s window is routinely exceeded even on healthy machines.
+const WINDOWS_PORTS_RESOLVE_TIMEOUT_MS = 15000;
+const MAX_PORTS_RESOLVE_TIMEOUT_MS = 120000;
+// Past the soft window we keep polling while the child process is alive: a slow
+// cold boot is not a failure, and killing it wastes the whole boot and feeds a
+// retry storm (the retry cold-starts a fresh process into the same contention).
+// This is the overall cap for that extended wait.
+const PORTS_RESOLVE_ALIVE_CAP_MS = 60000;
+
+/**
+ * Soft deadline for a kernel to write resolved ports into its connection file.
+ * Override with VSURF_KERNEL_PORTS_TIMEOUT_MS (ms); defaults to 5s, or 15s on
+ * Windows where cold boots are uniformly slower. Past this window the resolve
+ * wait extends (up to PORTS_RESOLVE_ALIVE_CAP_MS) while the child stays alive.
+ */
+export function resolvePortsResolveTimeoutMs(): number {
+	const raw = process.env.VSURF_KERNEL_PORTS_TIMEOUT_MS;
+	const fallback = process.platform === "win32" ? WINDOWS_PORTS_RESOLVE_TIMEOUT_MS : DEFAULT_PORTS_RESOLVE_TIMEOUT_MS;
+	if (raw === undefined || !/^\d+$/.test(raw)) {
+		return fallback;
+	}
+	const parsed = Number.parseInt(raw, 10);
+	if (parsed < 1) {
+		return fallback;
+	}
+	return Math.min(MAX_PORTS_RESOLVE_TIMEOUT_MS, parsed);
+}
 const READY_TIMEOUT_MS = 5000;
 // Loopback PUB/SUB subscription propagation is usually sub-ms, but keep a small guard before first execute.
 const IOPUB_SUBSCRIBE_DELAY_MS = 50;
@@ -821,8 +849,13 @@ export class KernelManager {
 	}
 
 	private async waitForResolvedConnection(connectionPath: string): Promise<ConnectionInfo> {
+		const timeoutMs = resolvePortsResolveTimeoutMs();
 		const startedAt = Date.now();
-		while (Date.now() - startedAt < PORTS_RESOLVE_TIMEOUT_MS) {
+		// A child that is still alive past the soft window is a slow cold boot, not a
+		// failure — keep polling up to a hard cap instead of killing nearly-done work.
+		const hardCapMs = Math.max(timeoutMs, PORTS_RESOLVE_ALIVE_CAP_MS);
+		let extended = false;
+		while (Date.now() - startedAt < hardCapMs) {
 			if ((this.state as string) === "shutdown" || this.forkedKernelDied()) {
 				const tail = this.kernelStderr.slice(-1024);
 				throw new Error(`Kernel exited before resolving ports. stderr:\n${tail || "(empty)"}`);
@@ -833,12 +866,19 @@ export class KernelManager {
 				return info;
 			}
 
+			if (!extended && Date.now() - startedAt >= timeoutMs) {
+				extended = true;
+				this.appendKernelDiagnostic(
+					`ports not resolved within ${timeoutMs}ms; kernel process still alive, waiting up to ${hardCapMs}ms`,
+				);
+			}
+
 			await sleep(25);
 		}
 
 		const tail = this.kernelStderr.slice(-1024);
 		throw new Error(
-			`Kernel did not resolve connection ports within ${PORTS_RESOLVE_TIMEOUT_MS}ms. stderr tail:\n${tail || "(empty)"}`,
+			`Kernel did not resolve connection ports within ${hardCapMs}ms. stderr tail:\n${tail || "(empty)"}`,
 		);
 	}
 

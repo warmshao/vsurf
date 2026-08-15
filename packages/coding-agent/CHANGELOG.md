@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Fixed concurrent subagent fan-out on Windows tripping the 5s kernel port-resolve window: the boot gate now defaults to a much lower concurrency on win32 (`max(2, cores/3)`; Windows cold boots pay full CreateProcess + per-process imports), the resolve timeout is configurable via `VSURF_KERNEL_PORTS_TIMEOUT_MS` (default 5s, 15s on Windows), and a kernel that is still alive past the window is given up to 60s to finish booting instead of being killed and cold-restarted by the retry.
+
 ## [0.7.3] - 2026-08-15
 
 - Removed the Cloudflare R2 release channel (curl installer, tarball hosting, and release-manifest version checks); releases publish to npm and GitHub Releases only, and update checks read the npm registry dist-tags (`VSURF_NPM_REGISTRY_URL` overrides the registry).
