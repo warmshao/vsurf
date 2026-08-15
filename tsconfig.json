@@ -1,0 +1,25 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"paths": {
+			"*": ["./*"],
+			"vsurf-ai": ["./packages/ai/src/index.ts"],
+			"vsurf-ai/oauth": ["./packages/ai/src/oauth.ts"],
+			"vsurf-ai/*": ["./packages/ai/src/*.ts", "./packages/ai/src/providers/*.ts"],
+			"vsurf-ai/dist/*": ["./packages/ai/src/*"],
+			"vsurf-agent": ["./packages/agent/src/index.ts"],
+			"vsurf-agent/*": ["./packages/agent/src/*"],
+			"vsurf": ["./packages/coding-agent/src/index.ts"],
+			"vsurf/hooks": ["./packages/coding-agent/src/core/hooks/index.ts"],
+			"vsurf/*": ["./packages/coding-agent/src/*"],
+			"typebox": ["./node_modules/typebox"],
+			"vsurf-tui": ["./packages/tui/src/index.ts"],
+			"vsurf-tui/*": ["./packages/tui/src/*"],
+			"vsurf-agent-old": ["./packages/agent-old/src/index.ts"],
+			"vsurf-agent-old/*": ["./packages/agent-old/src/*"]
+		}
+	},
+	"include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/coding-agent/examples/**/*"],
+	"exclude": ["**/dist/**"]
+}
