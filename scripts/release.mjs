@@ -147,10 +147,17 @@ console.log("\n=== Release Script ===\n");
 
 // 1. Check for uncommitted changes
 console.log("Checking for uncommitted changes...");
+// models.generated.ts is refreshed from the live model catalog on every build
+// (packages/ai build runs generate-models), so a dirty copy is expected and is
+// swept into the release commit by stageChangedFiles() below.
+const GENERATED_OK = ["packages/ai/src/models.generated.ts"];
 const status = run("git status --porcelain", { silent: true });
-if (status && status.trim()) {
+const blocking = (status || "")
+	.split("\n")
+	.filter((line) => line.trim() && !GENERATED_OK.some((p) => line.includes(p)));
+if (blocking.length > 0) {
 	console.error("Error: Uncommitted changes detected. Commit or stash first.");
-	console.error(status);
+	console.error(blocking.join("\n"));
 	process.exit(1);
 }
 console.log("  Working directory clean\n");
