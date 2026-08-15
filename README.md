@@ -73,6 +73,7 @@ vsurf --resume [path|id]       # Browse sessions or resume one directly
 vsurf status                   # Inspect background service state
 vsurf doctor [--fix]           # Inspect or repair the installation
 vsurf shutdown                 # Stop the agent, worker, and background service
+vsurf update                   # Update vsurf to the latest version
 ```
 
 ## Built for Long-Running Work

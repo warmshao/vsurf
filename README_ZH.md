@@ -73,6 +73,7 @@ vsurf --resume [path|id]       # 浏览会话或直接恢复某个会话
 vsurf status                   # 查看后台服务状态
 vsurf doctor [--fix]           # 检查或修复安装
 vsurf shutdown                 # 停止智能体、worker 和后台服务
+vsurf update                   # 将 vsurf 更新到最新版本
 ```
 
 ## 为长时间运行的工作而生
