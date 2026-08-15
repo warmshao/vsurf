@@ -8,7 +8,6 @@ import {
 	TruncatedText,
 } from "vsurf-tui";
 import type { AuthStatus, AuthStorage } from "../../../core/auth-storage.js";
-import { PRIME_INFERENCE_PROVIDER_ID } from "../../../core/vsurf-inference-auth.js";
 import { theme } from "../theme/theme.js";
 import {
 	getMenuListLayout,
@@ -204,10 +203,6 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 			if (rankDelta !== 0) {
 				return rankDelta;
 			}
-			if (this.mode === "login" && a.id !== b.id) {
-				if (a.id === PRIME_INFERENCE_PROVIDER_ID) return -1;
-				if (b.id === PRIME_INFERENCE_PROVIDER_ID) return 1;
-			}
 			return compareAuthSelectorProviders(a, b);
 		});
 	}
@@ -351,8 +346,6 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 		switch (status.source) {
 			case "environment":
 				return theme.fg("success", `env: ${status.label ?? "API key"}`);
-			case "vsurf_cli":
-				return theme.fg("success", status.label ?? "Prime CLI");
 			case "runtime":
 				return theme.fg("success", "runtime API key");
 			case "fallback":

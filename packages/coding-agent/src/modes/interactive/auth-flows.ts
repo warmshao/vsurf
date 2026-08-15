@@ -13,20 +13,6 @@ import type { OverlayHandle, TUI } from "vsurf-tui";
 import { getAuthPath, getDocsPath } from "../../config.js";
 import type { ModelRegistry } from "../../core/model-registry.js";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.js";
-import {
-	checkPrimeInferenceAccess,
-	checkVsurfTracesAccess,
-	fetchPrimeTeams,
-	loadPrimeCliConfig,
-	loginPrimeInference,
-	loginVsurfTraces,
-	PRIME_INFERENCE_PROVIDER_ID,
-	PRIME_INFERENCE_PROVIDER_NAME,
-	type PrimeTeam,
-	resolveVsurfTracesBaseUrl,
-	VSURF_TRACES_PROVIDER_ID,
-	VSURF_TRACES_PROVIDER_NAME,
-} from "../../core/vsurf-inference-auth.js";
 import { SERPER_CREDENTIAL_ID, SERPER_CREDENTIAL_NAME } from "../../core/websearch-credential.js";
 import { showFullPaneOverlay } from "./components/centered-overlay.js";
 import { ExtensionSelectorComponent } from "./components/extension-selector.js";
@@ -37,7 +23,6 @@ import {
 	compareAuthSelectorProviders,
 	OAuthSelectorComponent,
 } from "./components/oauth-selector.js";
-import { PrimeTeamSelectorComponent } from "./components/vsurf-team-selector.js";
 import { theme } from "./theme/theme.js";
 
 export type AuthenticationResult =
@@ -53,6 +38,8 @@ export type AuthenticationResult =
 	| { status: "failed" };
 
 export const BEDROCK_PROVIDER_ID = "amazon-bedrock";
+export const OPENAI_COMPATIBLE_PROVIDER_ID = "openai-compatible";
+export const OPENAI_COMPATIBLE_PROVIDER_NAME = "OpenAI-Compatible";
 
 export const ANTHROPIC_SUBSCRIPTION_AUTH_WARNING =
 	"Anthropic subscription auth is active. Third-party harness usage draws from extra usage and is billed per token, not your Claude plan limits. Manage extra usage at https://claude.ai/settings/usage.";
@@ -185,8 +172,8 @@ export class ProviderAuthFlows {
 		if (providerOption.authType === "oauth") {
 			return this.showLoginDialog(providerOption.id, providerOption.name, kind);
 		}
-		if (providerOption.id === PRIME_INFERENCE_PROVIDER_ID) {
-			return this.runPrimeInferenceLogin();
+		if (providerOption.id === OPENAI_COMPATIBLE_PROVIDER_ID) {
+			return this.runOpenAICompatibleLogin();
 		}
 		if (providerOption.id === BEDROCK_PROVIDER_ID) {
 			return this.showBedrockSetupDialog(providerOption.id, providerOption.name);
@@ -258,6 +245,9 @@ export class ProviderAuthFlows {
 
 		const modelProviders = new Set(this.host.modelRegistry.getAll().map((model) => model.provider));
 		for (const providerId of modelProviders) {
+			if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
+				continue;
+			}
 			if (!isApiKeyLoginProvider(providerId, oauthProviderIds)) {
 				continue;
 			}
@@ -267,6 +257,13 @@ export class ProviderAuthFlows {
 				authType: "api_key",
 			});
 		}
+
+		// Generic OpenAI-compatible endpoint (base URL + API key + models via models.json).
+		options.push({
+			id: OPENAI_COMPATIBLE_PROVIDER_ID,
+			name: OPENAI_COMPATIBLE_PROVIDER_NAME,
+			authType: "api_key",
+		});
 
 		// Serper is a skill credential, not a model provider, so add it manually.
 		options.push({
@@ -303,17 +300,6 @@ export class ProviderAuthFlows {
 				authType: credential.type,
 				category: isSerper || isMcp ? "service" : "provider",
 			});
-		}
-
-		if (!options.some((option) => option.id === PRIME_INFERENCE_PROVIDER_ID)) {
-			const primeInferenceStatus = authStorage.getAuthStatus(PRIME_INFERENCE_PROVIDER_ID);
-			if (primeInferenceStatus.source === "vsurf_cli") {
-				options.push({
-					id: PRIME_INFERENCE_PROVIDER_ID,
-					name: PRIME_INFERENCE_PROVIDER_NAME,
-					authType: "api_key",
-				});
-			}
 		}
 
 		return options.sort((a, b) => a.name.localeCompare(b.name));
@@ -404,348 +390,75 @@ export class ProviderAuthFlows {
 		}
 	}
 
-	private showPrimeTeamSelector(
-		teams: PrimeTeam[],
-		currentTeamId: string | undefined,
-	): Promise<PrimeTeam | null | undefined> {
-		return new Promise((resolve) => {
-			let handle: OverlayHandle | undefined;
-			const close = () => {
-				handle?.hide();
-				this.host.ui.requestRender();
-			};
-			const selector = new PrimeTeamSelectorComponent(
-				teams,
-				currentTeamId,
-				(team) => {
-					close();
-					resolve(team);
-				},
-				() => {
-					close();
-					resolve(undefined);
-				},
-				{ getRows: () => this.host.ui.terminal.rows },
-			);
-			handle = showFullPaneOverlay(this.host.ui, selector, 78);
-		});
-	}
-
-	private getPrimeInferenceDefaultTeamStatus(): string {
-		const configPath = this.host.modelRegistry.authStorage.getPrimeCliConfigPath();
-		if (configPath) {
-			let config: ReturnType<typeof loadPrimeCliConfig>;
-			try {
-				config = loadPrimeCliConfig(configPath);
-			} catch {
-				return "Using personal account.";
-			}
-			if (config.teamIdFromEnv) {
-				return "Using team from VSURF_TEAM_ID.";
-			}
-			if (config.teamName) {
-				return `Using team "${config.teamName}".`;
-			}
-			if (config.teamId) {
-				return "Using Prime CLI team.";
-			}
-		}
-		const storedTeam = this.host.modelRegistry.authStorage.getPrimeInferenceTeamSelection();
-		if (storedTeam) {
-			return `Using team "${storedTeam.name}".`;
-		}
-		if (storedTeam === null) {
-			return "Using personal account.";
-		}
-		return "Using personal account.";
-	}
-
-	private async selectPrimeInferenceTeam(apiKey: string, dialog: LoginDialogComponent): Promise<string | undefined> {
-		try {
-			const config = loadPrimeCliConfig(this.host.modelRegistry.authStorage.getPrimeCliConfigPath());
-			if (config.teamIdFromEnv) {
-				this.host.modelRegistry.authStorage.reload();
-				return "Using team from VSURF_TEAM_ID.";
-			}
-
-			dialog.showProgress("Loading Prime teams...");
-			const teams = await fetchPrimeTeams(apiKey, config.baseUrl, { signal: dialog.signal });
-			if (dialog.signal.aborted) {
-				return this.getPrimeInferenceDefaultTeamStatus();
-			}
-			if (teams.length === 0) {
-				this.host.modelRegistry.authStorage.setPrimeInferenceTeamSelection(null);
-				return "Using personal account.";
-			}
-
-			const storedTeam = this.host.modelRegistry.authStorage.getPrimeInferenceTeamSelection();
-			const currentTeamId = storedTeam === null ? undefined : (storedTeam?.teamId ?? config.teamId);
-			const selectedTeam = await this.showPrimeTeamSelector(teams, currentTeamId);
-			if (selectedTeam !== undefined) {
-				this.host.modelRegistry.authStorage.setPrimeInferenceTeamSelection(selectedTeam);
-			}
-			return selectedTeam
-				? `Using team "${selectedTeam.name}".`
-				: selectedTeam === null
-					? "Using personal account."
-					: this.getPrimeInferenceDefaultTeamStatus();
-		} catch {
-			this.host.modelRegistry.authStorage.reload();
-			return this.getPrimeInferenceDefaultTeamStatus();
-		}
-	}
-
-	private async completePrimeInferenceLogin(
-		apiKey: string,
-		dialog: LoginDialogComponent,
-		closeDialog: () => void,
-	): Promise<AuthenticationResult> {
-		this.host.modelRegistry.authStorage.setPrimeInferenceApiKey(apiKey);
-		const teamStatus = await this.selectPrimeInferenceTeam(apiKey, dialog);
-
-		closeDialog();
-		return await this.completeProviderAuthentication(
-			PRIME_INFERENCE_PROVIDER_ID,
-			PRIME_INFERENCE_PROVIDER_NAME,
-			"api_key",
-			teamStatus,
-			"provider",
-			this.host.modelRegistry.authStorage.getPrimeCliConfigPath() ?? getAuthPath(),
-		);
-	}
-
-	private async completeVsurfTracesLogin(apiKey: string, closeDialog: () => void): Promise<AuthenticationResult> {
-		this.host.modelRegistry.authStorage.set(VSURF_TRACES_PROVIDER_ID, {
-			type: "api_key",
-			key: apiKey,
-		});
-
-		closeDialog();
-		return await this.completeProviderAuthentication(VSURF_TRACES_PROVIDER_ID, VSURF_TRACES_PROVIDER_NAME, "api_key");
-	}
-
-	async runPrimeInferenceLogin(): Promise<AuthenticationResult> {
+	private async runOpenAICompatibleLogin(): Promise<AuthenticationResult> {
 		const dialog = new LoginDialogComponent(
 			this.host.ui,
-			PRIME_INFERENCE_PROVIDER_ID,
+			OPENAI_COMPATIBLE_PROVIDER_ID,
 			(_success, _message) => {
 				// Completion handled below.
 			},
-			PRIME_INFERENCE_PROVIDER_NAME,
+			OPENAI_COMPATIBLE_PROVIDER_NAME,
+			"OpenAI-compatible endpoint",
 		);
 
-		const handle = showFullPaneOverlay(this.host.ui, dialog, {
-			maxContentWidth: 88,
-			suspendFullscreenMouse: true,
-		});
+		const handle = showFullPaneOverlay(this.host.ui, dialog, 88);
 
 		const closeDialog = () => {
 			handle.hide();
 			this.host.ui.requestRender();
 		};
 
-		// The browser challenge gets its own controller so a manually pasted key
-		// can stop the polling without tearing down the dialog.
-		const browserAbort = new AbortController();
-		const onDialogAbort = () => browserAbort.abort();
-		dialog.signal.addEventListener("abort", onDialogAbort, { once: true });
-
-		let manualInputArmed = false;
-		let resolveManualKey: (entry: { apiKey: string; source: "manual" }) => void = () => {};
-		const manualKeyEntry = new Promise<{ apiKey: string; source: "manual" }>((resolve) => {
-			resolveManualKey = resolve;
-		});
-		const armManualInput = (prompt: string): void => {
-			manualInputArmed = true;
-			void (async () => {
-				let value = (await dialog.showManualInput(prompt)).trim();
-				while (!value) {
-					value = (await dialog.waitForInput()).trim();
-				}
-				resolveManualKey({ apiKey: value, source: "manual" });
-			})().catch(() => {
-				// Cancellation surfaces through the dialog signal.
-			});
-		};
-
 		try {
-			const browserLogin = loginPrimeInference(
-				{
-					onAuth: (info) => {
-						dialog.showAuth(info.url, info.instructions);
-						armManualInput("Complete the sign-in in your browser, or paste an API key below:");
-					},
-					onProgress: (message) => {
-						dialog.showProgress(message);
-					},
-					signal: browserAbort.signal,
-				},
-				{
-					configPath: this.host.modelRegistry.authStorage.getPrimeCliConfigPath(),
-				},
+			const baseUrl = (await dialog.showPrompt("Enter base URL:", "https://api.example.com/v1")).trim();
+			if (!baseUrl) {
+				throw new Error("Base URL cannot be empty.");
+			}
+
+			const apiKey = (await dialog.showPrompt("Enter API key:")).trim();
+			if (!apiKey) {
+				throw new Error("API key cannot be empty.");
+			}
+
+			const modelInput = (
+				await dialog.showPrompt("Enter model ID(s):", "comma-separated, e.g. gpt-4o, llama-3.3-70b")
+			).trim();
+			const modelIds = [
+				...new Set(
+					modelInput
+						.split(",")
+						.map((id) => id.trim())
+						.filter((id) => id.length > 0),
+				),
+			];
+			if (modelIds.length === 0) {
+				throw new Error("At least one model ID is required.");
+			}
+
+			this.host.modelRegistry.upsertCustomProvider(OPENAI_COMPATIBLE_PROVIDER_ID, {
+				name: OPENAI_COMPATIBLE_PROVIDER_NAME,
+				baseUrl,
+				apiKey,
+				api: "openai-completions",
+				models: modelIds.map((id) => ({ id, name: id })),
+			});
+
+			closeDialog();
+			return await this.completeProviderAuthentication(
+				OPENAI_COMPATIBLE_PROVIDER_ID,
+				OPENAI_COMPATIBLE_PROVIDER_NAME,
+				"api_key",
+				`${modelIds.length} model${modelIds.length === 1 ? "" : "s"} configured`,
+				"provider",
+				this.host.modelRegistry.getModelsJsonPath() ?? getAuthPath(),
 			);
-			// When the browser challenge cannot start or breaks down, keep the dialog
-			// open and fall back to plain API key entry instead of failing outright.
-			const browserLoginOrFallback = browserLogin.catch((error: unknown) => {
-				if (browserAbort.signal.aborted) {
-					throw error;
-				}
-				const errorMsg = error instanceof Error ? error.message : String(error);
-				dialog.showProgress(`Browser sign-in unavailable (${errorMsg}).`);
-				if (!manualInputArmed) {
-					armManualInput("Paste a Prime API key below:");
-				}
-				return manualKeyEntry;
-			});
-			// Once the browser flow has settled into manual fallback, nothing above
-			// rejects on cancel anymore, so the dialog signal must end the race too.
-			const dialogCancelled = new Promise<never>((_, reject) => {
-				dialog.signal.addEventListener("abort", () => reject(new Error("Login cancelled")), { once: true });
-			});
-			// Promise.race observes the rejections below, but keep dedicated handlers
-			// so neither an aborted browser flow nor a cancelled dialog can surface
-			// as an unhandled rejection.
-			browserLoginOrFallback.catch(() => {});
-			dialogCancelled.catch(() => {});
-
-			const result = await Promise.race([browserLoginOrFallback, manualKeyEntry, dialogCancelled]);
-			if (dialog.signal.aborted) {
-				closeDialog();
-				return { status: "cancelled" };
-			}
-
-			if (result.source === "manual") {
-				browserAbort.abort();
-				dialog.showProgress("Checking VSurf Inference access...");
-				const config = loadPrimeCliConfig(this.host.modelRegistry.authStorage.getPrimeCliConfigPath());
-				const access = await checkPrimeInferenceAccess(result.apiKey, config.baseUrl, { signal: dialog.signal });
-				if (dialog.signal.aborted) {
-					closeDialog();
-					return { status: "cancelled" };
-				}
-				if (!access.ok) {
-					const status = access.status === undefined ? "" : `HTTP ${access.status}: `;
-					throw new Error(`Prime API key does not have VSurf Inference access (${status}${access.message})`);
-				}
-			}
-
-			return await this.completePrimeInferenceLogin(result.apiKey, dialog, closeDialog);
 		} catch (error: unknown) {
 			closeDialog();
 			const errorMsg = error instanceof Error ? error.message : String(error);
-			if (!dialog.signal.aborted && errorMsg !== "Login cancelled") {
-				this.host.showError(`Failed to login to ${PRIME_INFERENCE_PROVIDER_NAME}: ${errorMsg}`);
+			if (errorMsg !== "Login cancelled") {
+				this.host.showError(`Failed to set up ${OPENAI_COMPATIBLE_PROVIDER_NAME}: ${errorMsg}`);
 				return { status: "failed" };
 			}
 			return { status: "cancelled" };
-		} finally {
-			dialog.signal.removeEventListener("abort", onDialogAbort);
-		}
-	}
-
-	async runVsurfTracesLogin(): Promise<AuthenticationResult> {
-		const dialog = new LoginDialogComponent(
-			this.host.ui,
-			VSURF_TRACES_PROVIDER_ID,
-			(_success, _message) => {
-				// Completion handled below.
-			},
-			VSURF_TRACES_PROVIDER_NAME,
-		);
-
-		const handle = showFullPaneOverlay(this.host.ui, dialog, {
-			maxContentWidth: 88,
-			suspendFullscreenMouse: true,
-		});
-
-		const closeDialog = () => {
-			handle.hide();
-			this.host.ui.requestRender();
-		};
-
-		const browserAbort = new AbortController();
-		const onDialogAbort = () => browserAbort.abort();
-		dialog.signal.addEventListener("abort", onDialogAbort, { once: true });
-
-		let manualInputArmed = false;
-		let resolveManualKey: (entry: { apiKey: string; source: "manual" }) => void = () => {};
-		const manualKeyEntry = new Promise<{ apiKey: string; source: "manual" }>((resolve) => {
-			resolveManualKey = resolve;
-		});
-		const armManualInput = (prompt: string): void => {
-			manualInputArmed = true;
-			void (async () => {
-				let value = (await dialog.showManualInput(prompt)).trim();
-				while (!value) {
-					value = (await dialog.waitForInput()).trim();
-				}
-				resolveManualKey({ apiKey: value, source: "manual" });
-			})().catch(() => {
-				// Cancellation surfaces through the dialog signal.
-			});
-		};
-
-		try {
-			const browserLogin = loginVsurfTraces({
-				onAuth: (info) => {
-					dialog.showAuth(info.url, info.instructions);
-					armManualInput("Complete the sign-in in your browser, or paste a Prime API key below:");
-				},
-				onProgress: (message) => {
-					dialog.showProgress(message);
-				},
-				signal: browserAbort.signal,
-			});
-			const browserLoginOrFallback = browserLogin.catch((error: unknown) => {
-				if (browserAbort.signal.aborted) {
-					throw error;
-				}
-				const errorMsg = error instanceof Error ? error.message : String(error);
-				dialog.showProgress(`Browser sign-in unavailable (${errorMsg}).`);
-				if (!manualInputArmed) {
-					armManualInput("Paste a Prime API key below:");
-				}
-				return manualKeyEntry;
-			});
-			const dialogCancelled = new Promise<never>((_, reject) => {
-				dialog.signal.addEventListener("abort", () => reject(new Error("Login cancelled")), { once: true });
-			});
-			browserLoginOrFallback.catch(() => {});
-			dialogCancelled.catch(() => {});
-
-			const result = await Promise.race([browserLoginOrFallback, manualKeyEntry, dialogCancelled]);
-			if (dialog.signal.aborted) {
-				closeDialog();
-				return { status: "cancelled" };
-			}
-
-			if (result.source === "manual") {
-				browserAbort.abort();
-				dialog.showProgress("Checking VSurf trace access...");
-				const access = await checkVsurfTracesAccess(result.apiKey, resolveVsurfTracesBaseUrl(), {
-					signal: dialog.signal,
-				});
-				if (dialog.signal.aborted) {
-					closeDialog();
-					return { status: "cancelled" };
-				}
-				if (!access.ok) {
-					const status = access.status === undefined ? "" : `HTTP ${access.status}: `;
-					throw new Error(`Prime API key does not have VSurf trace access (${status}${access.message})`);
-				}
-			}
-
-			return await this.completeVsurfTracesLogin(result.apiKey, closeDialog);
-		} catch (error: unknown) {
-			closeDialog();
-			const errorMsg = error instanceof Error ? error.message : String(error);
-			if (!dialog.signal.aborted && errorMsg !== "Login cancelled") {
-				this.host.showError(`Failed to login to ${VSURF_TRACES_PROVIDER_NAME}: ${errorMsg}`);
-				return { status: "failed" };
-			}
-			return { status: "cancelled" };
-		} finally {
-			dialog.signal.removeEventListener("abort", onDialogAbort);
 		}
 	}
 

@@ -157,27 +157,6 @@ describe("ModelRegistry", () => {
 			}
 		});
 
-		test("prime inference requests include selected VSurf team header", async () => {
-			const primeAuthStorage = AuthStorage.inMemory({
-				"vsurf-inference": {
-					type: "api_key",
-					key: "agent-key",
-					primeTeam: { teamId: "team-1", name: "Research" },
-				},
-			});
-			const registry = ModelRegistry.create(primeAuthStorage, modelsJsonPath);
-			const model = getModelsForProvider(registry, "vsurf-inference")[0];
-			expect(model).toBeDefined();
-
-			const auth = await registry.getApiKeyAndHeaders(model!);
-
-			expect(auth).toEqual({
-				ok: true,
-				apiKey: "agent-key",
-				headers: { "X-Prime-Team-ID": "team-1" },
-			});
-		});
-
 		test("baseUrl-only override does not affect other providers", () => {
 			writeRawModelsJson({
 				anthropic: overrideConfig("https://my-proxy.example.com/v1"),
@@ -1122,10 +1101,8 @@ describe("ModelRegistry", () => {
 	});
 
 	describe("auth refresh across processes", () => {
-		test("model catalog includes unauthenticated public models and hides private Prime routes", async () => {
-			const savedPrimeApiKey = process.env.VSURF_API_KEY;
+		test("model catalog includes unauthenticated public models and excludes disabled providers", async () => {
 			const savedOpenAiApiKey = process.env.OPENAI_API_KEY;
-			delete process.env.VSURF_API_KEY;
 			delete process.env.OPENAI_API_KEY;
 			try {
 				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
@@ -1133,19 +1110,12 @@ describe("ModelRegistry", () => {
 				const unauthenticated = await registry.refreshModelCatalog();
 				expect(unauthenticated.models.some((model) => model.provider === "openai")).toBe(true);
 				expect(unauthenticated.configuredProviders).not.toContain("openai");
-				expect(
-					unauthenticated.models.some(
-						(model) => model.provider === "vsurf-inference" && model.id.startsWith("internal/"),
-					),
-				).toBe(false);
+				expect(unauthenticated.models.some((model) => model.provider === "vsurf-inference")).toBe(false);
 
 				authStorage.setRuntimeApiKey("openai", "test-key");
 				const authenticated = await registry.refreshModelCatalog();
 				expect(authenticated.configuredProviders).toContain("openai");
 			} finally {
-				if (savedPrimeApiKey !== undefined) {
-					process.env.VSURF_API_KEY = savedPrimeApiKey;
-				}
 				if (savedOpenAiApiKey !== undefined) {
 					process.env.OPENAI_API_KEY = savedOpenAiApiKey;
 				}
@@ -1153,21 +1123,21 @@ describe("ModelRegistry", () => {
 		});
 
 		test("refresh() picks up credentials written by another process", () => {
-			const savedEnvKey = process.env.VSURF_API_KEY;
-			delete process.env.VSURF_API_KEY;
+			const savedEnvKey = process.env.OPENAI_API_KEY;
+			delete process.env.OPENAI_API_KEY;
 			try {
 				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
-				expect(registry.getAvailable().some((m) => m.provider === "vsurf-inference")).toBe(false);
+				expect(registry.getAvailable().some((m) => m.provider === "openai")).toBe(false);
 
 				// Simulate the UI process saving a login while this registry lives in the daemon.
 				const otherProcessAuth = AuthStorage.create(join(tempDir, "auth.json"));
-				otherProcessAuth.set("vsurf-inference", { type: "api_key", key: "test-key" });
+				otherProcessAuth.set("openai", { type: "api_key", key: "test-key" });
 
 				registry.refresh();
-				expect(registry.getAvailable().some((m) => m.provider === "vsurf-inference")).toBe(true);
+				expect(registry.getAvailable().some((m) => m.provider === "openai")).toBe(true);
 			} finally {
 				if (savedEnvKey !== undefined) {
-					process.env.VSURF_API_KEY = savedEnvKey;
+					process.env.OPENAI_API_KEY = savedEnvKey;
 				}
 			}
 		});

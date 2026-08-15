@@ -1,10 +1,9 @@
 import stripAnsi from "strip-ansi";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { resetCapabilitiesCache, setCapabilities, setKeybindings, type TUI, visibleWidth } from "vsurf-tui";
+import { resetCapabilitiesCache, setCapabilities, setKeybindings, type TUI } from "vsurf-tui";
 import { KeybindingsManager } from "../src/core/keybindings.js";
 import { LoginDialogComponent } from "../src/modes/interactive/components/login-dialog.js";
 import { initTheme } from "../src/modes/interactive/theme/theme.js";
-import { PRIME_BUTTERFLY_LOGO } from "../src/themes/vsurf-logo.js";
 
 const mocks = vi.hoisted(() => ({
 	copyToClipboard: vi.fn(),
@@ -138,10 +137,8 @@ describe("LoginDialogComponent", () => {
 
 		dialog.showAuth("https://example.com/challenge", "Code: abc-123");
 		const output = stripAnsi(dialog.render(88).join("\n"));
-		const firstLogoLine = PRIME_BUTTERFLY_LOGO.split("\n")[0]?.trim() ?? "";
 
 		expect(output).toContain("Login to VSurf Inference");
-		expect(output).toContain(firstLogoLine);
 		expect(output).toContain("Verification code");
 		expect(output).toContain("abc-123");
 		expect(output).not.toContain("click to open");
@@ -157,23 +154,6 @@ describe("LoginDialogComponent", () => {
 
 		expect(output).toContain("Waiting for browser authentication...");
 		expect(output).not.toContain("Status");
-	});
-
-	it("keeps the VSurf Inference brand header centered and within the panel", () => {
-		const dialog = new LoginDialogComponent(createFakeTui(), "vsurf-inference", () => {}, "VSurf Inference");
-
-		dialog.showProgress("Checking existing Prime CLI credentials...");
-		const lines = dialog.render(88);
-		const output = stripAnsi(lines.join("\n"));
-		const titleLine = output.split("\n").find((line) => line.includes("Login to VSurf Inference"));
-		const titleOffset = titleLine?.indexOf("Login to VSurf Inference") ?? -1;
-
-		expect(titleOffset).toBeGreaterThan(20);
-		expect(output).toContain("Connect your Prime Intellect account to enable VSurf Inference models.");
-		expect(output).toContain("Preparing authentication");
-		for (const line of lines) {
-			expect(visibleWidth(line)).toBe(88);
-		}
 	});
 
 	it("cancels the prompt with esc and ctrl+c", async () => {

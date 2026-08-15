@@ -152,7 +152,6 @@ export interface Settings {
 	theme?: string;
 	compaction?: CompactionSettings;
 	autoRefine?: AutoRefineSettings;
-	agentTraces?: AgentTracesSettings;
 	telemetry?: TelemetrySettings;
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
@@ -182,10 +181,6 @@ export interface Settings {
 	warnings?: WarningSettings;
 	browser?: BrowserSettings; // Browser connection preference (attach / launch / endpoint)
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
-}
-
-export interface AgentTracesSettings {
-	enabled?: boolean;
 }
 
 export interface TelemetrySettings {
@@ -831,19 +826,6 @@ export class SettingsManager {
 		}
 		this.globalSettings.compaction.enabled = enabled;
 		this.markModified("compaction", "enabled");
-		this.save();
-	}
-
-	getAgentTracesEnabled(): boolean {
-		return this.settings.agentTraces?.enabled ?? false;
-	}
-
-	setAgentTracesEnabled(enabled: boolean): void {
-		if (!this.globalSettings.agentTraces) {
-			this.globalSettings.agentTraces = {};
-		}
-		this.globalSettings.agentTraces.enabled = enabled;
-		this.markModified("agentTraces", "enabled");
 		this.save();
 	}
 

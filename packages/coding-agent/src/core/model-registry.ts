@@ -4,7 +4,7 @@
 
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { type Static, type TProperties, Type } from "typebox";
 import type { Validator } from "typebox/compile";
@@ -36,12 +36,9 @@ import {
 	resolveConfigValueUncached,
 	resolveHeadersOrThrow,
 } from "./resolve-config-value.js";
-import { PRIME_INFERENCE_PROVIDER_ID } from "./vsurf-inference-auth.js";
-import {
-	fetchAuthorizedPrivatePrimeInferenceModelIds,
-	getPrivatePrimeInferenceModels,
-	isPrivatePrimeInferenceModel,
-} from "./vsurf-inference-models.js";
+
+/** Providers that exist in the built-in catalog but are not offered by this build. */
+const DISABLED_BUILT_IN_PROVIDERS = new Set(["vsurf-inference"]);
 
 // Schema for OpenRouter routing preferences
 const PercentileCutoffsSchema = Type.Object({
@@ -422,26 +419,6 @@ function readOpenAICodexModelIds(value: unknown): Set<string> {
 	);
 }
 
-const PRIVATE_PRIME_AUTHORIZATION_CACHE_FILE = "vsurf-inference-private-models.json";
-const PRIVATE_PRIME_AUTHORIZATION_CACHE_TTL_MS = 5 * 60_000;
-const PRIVATE_PRIME_BACKGROUND_REFRESH_TIMEOUT_MS = 3_000;
-
-interface PrivatePrimeAuthorizationCache {
-	fingerprint: string;
-	modelIds: Set<string>;
-	refreshedAt: number;
-}
-
-function privatePrimeAuthorizationFingerprint(apiKey: string, teamId: string): string {
-	return createHash("sha256").update(apiKey).update("\0").update(teamId).digest("hex");
-}
-
-function isOfflineModeEnabled(): boolean {
-	const value = process.env.VSURF_OFFLINE;
-	if (!value) return false;
-	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
-}
-
 /**
  * Model registry - loads and manages models, resolves API keys via AuthStorage.
  */
@@ -452,11 +429,7 @@ export class ModelRegistry {
 	private lastProviderAuthSourceTokens: Map<string, AuthSourceToken> = new Map();
 	private modelRequestHeaders: Map<string, Record<string, string>> = new Map();
 	private registeredProviders: Map<string, ProviderConfigInput> = new Map();
-	private authorizedPrivatePrimeInferenceModelIds = new Set<string>();
-	private authorizedPrivatePrimeInferenceTeamId: string | undefined;
-	private explicitPrivatePrimeInferenceModelIds = new Set<string>();
 	private openAICodexModelsCache: { authFingerprint: string; modelIds: Set<string>; refreshedAt: number } | undefined;
-	private backgroundPrivatePrimeAuthorization: { fingerprint: string; promise: Promise<void> } | undefined;
 	private loadError: string | undefined = undefined;
 
 	/** Re-register dynamic OAuth providers (e.g. user MCP servers) after refresh() resets the registry. */
@@ -488,9 +461,6 @@ export class ModelRegistry {
 		this.providerRequestConfigs.clear();
 		this.modelRequestHeaders.clear();
 		this.lastProviderAuthSourceTokens.clear();
-		this.authorizedPrivatePrimeInferenceModelIds.clear();
-		this.authorizedPrivatePrimeInferenceTeamId = undefined;
-		this.explicitPrivatePrimeInferenceModelIds.clear();
 		this.loadError = undefined;
 
 		// Credentials may have been written by another process (e.g. the UI
@@ -538,10 +508,7 @@ export class ModelRegistry {
 			// Keep built-in models even if custom models failed to load
 		}
 
-		this.explicitPrivatePrimeInferenceModelIds = new Set(
-			customModels.filter(isPrivatePrimeInferenceModel).map((model) => model.id),
-		);
-		const builtInModels = [...this.loadBuiltInModels(overrides, modelOverrides), ...getPrivatePrimeInferenceModels()];
+		const builtInModels = this.loadBuiltInModels(overrides, modelOverrides);
 		let combined = this.mergeCustomModels(builtInModels, customModels);
 
 		// Let OAuth providers modify their models (e.g., update baseUrl)
@@ -560,32 +527,34 @@ export class ModelRegistry {
 		overrides: Map<string, ProviderOverride>,
 		modelOverrides: Map<string, Map<string, ModelOverride>>,
 	): Model<Api>[] {
-		return getProviders().flatMap((provider) => {
-			const models = getModels(provider as KnownProvider) as Model<Api>[];
-			const providerOverride = overrides.get(provider);
-			const perModelOverrides = modelOverrides.get(provider);
+		return getProviders()
+			.filter((provider) => !DISABLED_BUILT_IN_PROVIDERS.has(provider))
+			.flatMap((provider) => {
+				const models = getModels(provider as KnownProvider) as Model<Api>[];
+				const providerOverride = overrides.get(provider);
+				const perModelOverrides = modelOverrides.get(provider);
 
-			return models.map((m) => {
-				let model = m;
+				return models.map((m) => {
+					let model = m;
 
-				// Apply provider-level baseUrl/headers/compat override
-				if (providerOverride) {
-					model = {
-						...model,
-						baseUrl: providerOverride.baseUrl ?? model.baseUrl,
-						compat: mergeCompat(model.compat, providerOverride.compat),
-					};
-				}
+					// Apply provider-level baseUrl/headers/compat override
+					if (providerOverride) {
+						model = {
+							...model,
+							baseUrl: providerOverride.baseUrl ?? model.baseUrl,
+							compat: mergeCompat(model.compat, providerOverride.compat),
+						};
+					}
 
-				// Apply per-model override
-				const modelOverride = perModelOverrides?.get(m.id);
-				if (modelOverride) {
-					model = applyModelOverride(model, modelOverride);
-				}
+					// Apply per-model override
+					const modelOverride = perModelOverrides?.get(m.id);
+					if (modelOverride) {
+						model = applyModelOverride(model, modelOverride);
+					}
 
-				return model;
+					return model;
+				});
 			});
-		});
 	}
 
 	/** Merge custom models into built-in list by provider+id (custom wins on conflicts). */
@@ -787,207 +756,27 @@ export class ModelRegistry {
 	 * This is a fast check that doesn't refresh OAuth tokens.
 	 */
 	getAvailable(): Model<Api>[] {
-		return this.models.filter((model) => {
-			if (
-				isPrivatePrimeInferenceModel(model) &&
-				!this.explicitPrivatePrimeInferenceModelIds.has(model.id) &&
-				!this.authorizedPrivatePrimeInferenceModelIds.has(model.id)
-			) {
-				return false;
-			}
-			return this.hasConfiguredAuth(model);
-		});
+		return this.models.filter((model) => this.hasConfiguredAuth(model));
 	}
 
 	async refreshAvailableModels(): Promise<Model<Api>[]> {
-		const previousPrivateModelIds = new Set(this.authorizedPrivatePrimeInferenceModelIds);
-		const previousTeamId = this.authorizedPrivatePrimeInferenceTeamId;
 		this.refresh();
-		await this.refreshPrivatePrimeInferenceAuthorization(previousPrivateModelIds, previousTeamId);
 		return this.getAvailable();
-	}
-
-	private async refreshPrivatePrimeInferenceAuthorization(
-		previousPrivateModelIds = new Set(this.authorizedPrivatePrimeInferenceModelIds),
-		previousTeamId = this.authorizedPrivatePrimeInferenceTeamId,
-	): Promise<void> {
-		const apiKey = await this.authStorage.getApiKey(PRIME_INFERENCE_PROVIDER_ID);
-		const teamHeaders = this.authStorage.getProviderHeaders(PRIME_INFERENCE_PROVIDER_ID);
-		const teamId = teamHeaders?.["X-Prime-Team-ID"];
-		if (!apiKey || !teamHeaders || !teamId) {
-			this.authorizedPrivatePrimeInferenceModelIds.clear();
-			this.authorizedPrivatePrimeInferenceTeamId = undefined;
-			return;
-		}
-
-		const fingerprint = privatePrimeAuthorizationFingerprint(apiKey, teamId);
-		const cached = this.readPrivatePrimeAuthorizationCache();
-		if (cached?.fingerprint === fingerprint) {
-			// Serve the persisted authorization decision so startup and model lists
-			// don't block on the network. A stale cache refreshes in the background
-			// and the updated ids apply to subsequent lookups in this process.
-			this.authorizedPrivatePrimeInferenceModelIds = new Set(cached.modelIds);
-			this.authorizedPrivatePrimeInferenceTeamId = teamId;
-			const cacheIsFresh = Date.now() - cached.refreshedAt < PRIVATE_PRIME_AUTHORIZATION_CACHE_TTL_MS;
-			if (cacheIsFresh || isOfflineModeEnabled()) {
-				return;
-			}
-			this.startBackgroundPrivatePrimeAuthorizationRefresh(apiKey, teamHeaders, teamId, fingerprint);
-			return;
-		}
-		if (isOfflineModeEnabled()) {
-			this.authorizedPrivatePrimeInferenceModelIds.clear();
-			this.authorizedPrivatePrimeInferenceTeamId = undefined;
-			return;
-		}
-
-		let authorizedIds: Set<string> | undefined;
-		try {
-			authorizedIds = await fetchAuthorizedPrivatePrimeInferenceModelIds(apiKey, teamHeaders);
-		} catch {
-			// Fall back to the previous authorization below.
-		}
-		// Leave newer state untouched if the credentials changed while fetching.
-		if ((await this.currentPrivatePrimeAuthorizationFingerprint()) !== fingerprint) {
-			return;
-		}
-		if (authorizedIds) {
-			this.authorizedPrivatePrimeInferenceModelIds = authorizedIds;
-			this.authorizedPrivatePrimeInferenceTeamId = teamId;
-			this.writePrivatePrimeAuthorizationCache({ fingerprint, modelIds: authorizedIds, refreshedAt: Date.now() });
-		} else if (teamId === previousTeamId) {
-			this.authorizedPrivatePrimeInferenceModelIds = previousPrivateModelIds;
-			this.authorizedPrivatePrimeInferenceTeamId = teamId;
-		} else {
-			this.authorizedPrivatePrimeInferenceModelIds.clear();
-			this.authorizedPrivatePrimeInferenceTeamId = undefined;
-		}
-	}
-
-	/**
-	 * Stale cache hits refresh in the background; failures keep the cached ids.
-	 * Refreshes for the same credentials are deduped, a changed-credentials
-	 * refresh is queued after the in-flight one, and a result is only applied
-	 * if the credentials it was fetched with are still current.
-	 */
-	private startBackgroundPrivatePrimeAuthorizationRefresh(
-		apiKey: string,
-		teamHeaders: Record<string, string>,
-		teamId: string,
-		fingerprint: string,
-	): void {
-		if (this.backgroundPrivatePrimeAuthorization?.fingerprint === fingerprint) {
-			return;
-		}
-		const run = async () => {
-			try {
-				const authorizedIds = await fetchAuthorizedPrivatePrimeInferenceModelIds(
-					apiKey,
-					teamHeaders,
-					undefined,
-					PRIVATE_PRIME_BACKGROUND_REFRESH_TIMEOUT_MS,
-				);
-				if ((await this.currentPrivatePrimeAuthorizationFingerprint()) !== fingerprint) {
-					return;
-				}
-				this.authorizedPrivatePrimeInferenceModelIds = authorizedIds;
-				this.authorizedPrivatePrimeInferenceTeamId = teamId;
-				this.writePrivatePrimeAuthorizationCache({ fingerprint, modelIds: authorizedIds, refreshedAt: Date.now() });
-			} catch {
-				// Keep the cached ids.
-			}
-		};
-		const pending = this.backgroundPrivatePrimeAuthorization?.promise;
-		const promise = (pending ?? Promise.resolve()).then(run);
-		this.backgroundPrivatePrimeAuthorization = { fingerprint, promise };
-		void promise.finally(() => {
-			if (this.backgroundPrivatePrimeAuthorization?.promise === promise) {
-				this.backgroundPrivatePrimeAuthorization = undefined;
-			}
-		});
-	}
-
-	private async currentPrivatePrimeAuthorizationFingerprint(): Promise<string | undefined> {
-		const apiKey = await this.authStorage.getApiKey(PRIME_INFERENCE_PROVIDER_ID);
-		const teamId = this.authStorage.getProviderHeaders(PRIME_INFERENCE_PROVIDER_ID)?.["X-Prime-Team-ID"];
-		return apiKey && teamId ? privatePrimeAuthorizationFingerprint(apiKey, teamId) : undefined;
-	}
-
-	private privatePrimeAuthorizationCachePath(): string | undefined {
-		if (!this.modelsJsonPath) {
-			return undefined;
-		}
-		return join(dirname(this.modelsJsonPath), PRIVATE_PRIME_AUTHORIZATION_CACHE_FILE);
-	}
-
-	private readPrivatePrimeAuthorizationCache(): PrivatePrimeAuthorizationCache | undefined {
-		const cachePath = this.privatePrimeAuthorizationCachePath();
-		if (!cachePath) {
-			return undefined;
-		}
-		try {
-			const parsed = JSON.parse(readFileSync(cachePath, "utf8")) as Partial<
-				Omit<PrivatePrimeAuthorizationCache, "modelIds"> & { modelIds: string[] }
-			>;
-			if (
-				typeof parsed.fingerprint !== "string" ||
-				!Array.isArray(parsed.modelIds) ||
-				typeof parsed.refreshedAt !== "number"
-			) {
-				return undefined;
-			}
-			return {
-				fingerprint: parsed.fingerprint,
-				modelIds: new Set(parsed.modelIds),
-				refreshedAt: parsed.refreshedAt,
-			};
-		} catch {
-			return undefined;
-		}
-	}
-
-	private writePrivatePrimeAuthorizationCache(cache: PrivatePrimeAuthorizationCache): void {
-		const cachePath = this.privatePrimeAuthorizationCachePath();
-		if (!cachePath) {
-			return;
-		}
-		try {
-			const tmpPath = `${cachePath}.${process.pid}.tmp`;
-			writeFileSync(tmpPath, JSON.stringify({ ...cache, modelIds: [...cache.modelIds] }), { mode: 0o600 });
-			renameSync(tmpPath, cachePath);
-		} catch {
-			// Caching is best effort; a failed write just means the next startup refetches.
-		}
 	}
 
 	async refreshModelCatalog(): Promise<ModelCatalogSnapshot> {
 		const availableModels = await this.refreshAvailableModels();
-		const availablePrivateModels = new Set(
-			availableModels.filter(isPrivatePrimeInferenceModel).map((model) => `${model.provider}/${model.id}`),
-		);
 		return {
-			models: this.models.filter(
-				(model) =>
-					!isPrivatePrimeInferenceModel(model) || availablePrivateModels.has(`${model.provider}/${model.id}`),
-			),
+			models: this.models,
 			configuredProviders: [...new Set(availableModels.map((model) => model.provider))],
 		};
 	}
 
 	async canUseModel(model: Model<Api>): Promise<boolean> {
-		if (!this.hasConfiguredAuth(model)) {
-			return false;
-		}
-		if (!isPrivatePrimeInferenceModel(model)) {
-			return true;
-		}
-
-		const availableModels = await this.refreshAvailableModels();
-		return availableModels.some((candidate) => candidate.provider === model.provider && candidate.id === model.id);
+		return this.hasConfiguredAuth(model);
 	}
 
 	async getExecutableModels(): Promise<Model<Api>[]> {
-		await this.refreshPrivatePrimeInferenceAuthorization();
 		const availableModels = this.getAvailable();
 		const codexModels = availableModels.filter((model) => model.provider === "openai-codex");
 		if (codexModels.length === 0) {
@@ -1341,15 +1130,14 @@ export class ModelRegistry {
 			this.setLastProviderAuthSourceToken(model.provider, apiKey === undefined ? undefined : authSourceToken);
 
 			const providerHeaders = resolveHeadersOrThrow(providerConfig?.headers, `provider "${model.provider}"`);
-			const authStorageHeaders = this.authStorage.getProviderHeaders(model.provider);
 			const modelHeaders = resolveHeadersOrThrow(
 				this.modelRequestHeaders.get(this.getModelRequestKey(model.provider, model.id)),
 				`model "${model.provider}/${model.id}"`,
 			);
 
 			let headers =
-				model.headers || authStorageHeaders || providerHeaders || modelHeaders
-					? { ...model.headers, ...authStorageHeaders, ...providerHeaders, ...modelHeaders }
+				model.headers || providerHeaders || modelHeaders
+					? { ...model.headers, ...providerHeaders, ...modelHeaders }
 					: undefined;
 
 			if (providerConfig?.authHeader) {
@@ -1396,6 +1184,38 @@ export class ModelRegistry {
 			source: source.source,
 			...(source.label ? { label: source.label } : {}),
 		};
+	}
+
+	/**
+	 * Upsert a custom provider definition into models.json and reload.
+	 * Comments and formatting in an existing models.json are not preserved.
+	 */
+	upsertCustomProvider(providerName: string, providerConfig: Record<string, unknown>): void {
+		if (!this.modelsJsonPath) {
+			throw new Error("models.json is not available in this session.");
+		}
+		let config: Record<string, unknown> = { providers: {} };
+		if (existsSync(this.modelsJsonPath)) {
+			const parsed = JSON.parse(stripJsonComments(readFileSync(this.modelsJsonPath, "utf-8"))) as unknown;
+			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+				throw new Error(`models.json has an unexpected shape. Fix it manually: ${this.modelsJsonPath}`);
+			}
+			config = parsed as Record<string, unknown>;
+		}
+		const providers =
+			config.providers && typeof config.providers === "object" && !Array.isArray(config.providers)
+				? (config.providers as Record<string, unknown>)
+				: {};
+		providers[providerName] = providerConfig;
+		config.providers = providers;
+
+		mkdirSync(dirname(this.modelsJsonPath), { recursive: true });
+		writeFileSync(this.modelsJsonPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+		this.refresh();
+	}
+
+	getModelsJsonPath(): string | undefined {
+		return this.modelsJsonPath;
 	}
 
 	/**

@@ -4,7 +4,6 @@ import { setKeybindings } from "vsurf-tui";
 import { type AuthStatus, AuthStorage } from "../src/core/auth-storage.js";
 import { KeybindingsManager } from "../src/core/keybindings.js";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../src/core/provider-display-names.js";
-import { PRIME_INFERENCE_PROVIDER_ID } from "../src/core/vsurf-inference-auth.js";
 import { isApiKeyLoginProvider } from "../src/modes/interactive/auth-flows.js";
 import {
 	compareAuthSelectorProviders,
@@ -60,7 +59,7 @@ describe("OAuthSelectorComponent", () => {
 		]);
 	});
 
-	it("sorts VSurf Inference first within every login auth-state group", () => {
+	it("sorts providers alphabetically within every login auth-state group", () => {
 		const cases: Array<{ status: AuthStatus; configuredProviderLeads: boolean }> = [
 			{ status: { configured: true, source: "environment" }, configuredProviderLeads: false },
 			{ status: { configured: false, source: "stale", label: "expired" }, configuredProviderLeads: true },
@@ -72,9 +71,9 @@ describe("OAuthSelectorComponent", () => {
 				"login",
 				AuthStorage.inMemory(),
 				[
-					{ id: "anthropic", name: "Anthropic", authType: "api_key" },
-					{ id: PRIME_INFERENCE_PROVIDER_ID, name: "VSurf Inference", authType: "api_key" },
 					{ id: "openai", name: "OpenAI", authType: "api_key" },
+					{ id: "mistral", name: "Mistral", authType: "api_key" },
+					{ id: "anthropic", name: "Anthropic", authType: "api_key" },
 				],
 				() => {},
 				() => {},
@@ -83,15 +82,15 @@ describe("OAuthSelectorComponent", () => {
 			);
 
 			const output = stripAnsi(selector.render(120).join("\n"));
-			const primeIndex = output.indexOf("VSurf Inference");
+			const mistralIndex = output.indexOf("Mistral");
 			const anthropicIndex = output.indexOf("Anthropic");
 			const openAiIndex = output.indexOf("OpenAI");
 
-			expect(primeIndex).toBeLessThan(anthropicIndex);
+			expect(anthropicIndex).toBeLessThan(mistralIndex);
 			if (configuredProviderLeads) {
-				expect(openAiIndex).toBeLessThan(primeIndex);
+				expect(openAiIndex).toBeLessThan(anthropicIndex);
 			} else {
-				expect(primeIndex).toBeLessThan(openAiIndex);
+				expect(mistralIndex).toBeLessThan(openAiIndex);
 			}
 		}
 	});
@@ -236,19 +235,19 @@ describe("OAuthSelectorComponent", () => {
 	it("sorts stale auth ahead of unconfigured providers", () => {
 		process.env.OPENAI_API_KEY = "test-openai-key";
 		const authStorage = AuthStorage.inMemory({
-			"vsurf-inference": {
+			cerebras: {
 				type: "api_key",
-				key: "stale-vsurf-key",
+				key: "stale-cerebras-key",
 			},
 		});
-		authStorage.markAuthStale("vsurf-inference");
+		authStorage.markAuthStale("cerebras");
 		const selector = new OAuthSelectorComponent(
 			"login",
 			authStorage,
 			[
 				{ id: "github-copilot", name: "GitHub Copilot", authType: "oauth" },
 				{ id: "amazon-bedrock", name: "Amazon Bedrock", authType: "api_key" },
-				{ id: "vsurf-inference", name: "VSurf Inference", authType: "api_key" },
+				{ id: "cerebras", name: "Cerebras", authType: "api_key" },
 				{ id: "openai", name: "OpenAI", authType: "api_key" },
 			],
 			() => {},
@@ -257,9 +256,9 @@ describe("OAuthSelectorComponent", () => {
 
 		const output = stripAnsi(selector.render(120).join("\n"));
 
-		expect(output.indexOf("OpenAI")).toBeLessThan(output.indexOf("VSurf Inference"));
-		expect(output.indexOf("VSurf Inference")).toBeLessThan(output.indexOf("GitHub Copilot"));
-		expect(output.indexOf("VSurf Inference")).toBeLessThan(output.indexOf("Amazon Bedrock"));
+		expect(output.indexOf("OpenAI")).toBeLessThan(output.indexOf("Cerebras"));
+		expect(output.indexOf("Cerebras")).toBeLessThan(output.indexOf("GitHub Copilot"));
+		expect(output.indexOf("Cerebras")).toBeLessThan(output.indexOf("Amazon Bedrock"));
 		expect(output).toContain("expired");
 	});
 
