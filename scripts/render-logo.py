@@ -80,7 +80,7 @@ def render(svg_path: Path, width: int, threshold: int, style: str) -> str:
 
 def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
-    default_svg = repo_root / "assets" / "brand" / "vsurf-butterfly.svg"
+    default_svg = repo_root / "assets" / "brand" / "vsurf-mark.svg"
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--width", type=int, default=60, help="output columns (default: 60)")

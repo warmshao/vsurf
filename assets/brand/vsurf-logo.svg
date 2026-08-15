@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- vsurf logo: white </> mark on a pure-black terminal badge.
+     Self-contained (own background), so it reads on both light and dark themes. -->
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none"
+     xmlns="http://www.w3.org/2000/svg">
+  <rect x="8" y="8" width="496" height="496" rx="116" fill="#000000"/>
+  <path d="M 148 156 L 64 256 L 148 356"
+        stroke="#FFFFFF" stroke-width="48"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 212 356 L 300 156"
+        stroke="#FF6B35" stroke-width="48" stroke-linecap="round"/>
+  <path d="M 364 156 L 448 256 L 364 356"
+        stroke="#FFFFFF" stroke-width="48"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

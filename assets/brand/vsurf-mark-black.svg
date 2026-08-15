@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- vsurf mark (dark): chunky rounded </> — the closing tag, geek emblem.
+     Near-black glyph on transparent — for light backgrounds. -->
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none"
+     xmlns="http://www.w3.org/2000/svg">
+  <path d="M 148 156 L 64 256 L 148 356"
+        stroke="#0F172A" stroke-width="48"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 212 356 L 300 156"
+        stroke="#E8590C" stroke-width="48" stroke-linecap="round"/>
+  <path d="M 364 156 L 448 256 L 364 356"
+        stroke="#0F172A" stroke-width="48"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
