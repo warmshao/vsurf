@@ -160,6 +160,7 @@ const mockState = vi.hoisted(() => ({
 	successorProcessStartId: "replacement-start" as string | undefined,
 	successorSocketPath: undefined as string | undefined,
 	spawnExitCodes: [] as number[],
+	npmViewVersion: "999.0.0",
 	shutdownResult: true,
 }));
 
@@ -177,9 +178,24 @@ function useFixedOwnerHello(): void {
 
 vi.mock("child_process", () => ({
 	spawn: vi.fn((command: string, args: string[]) => {
-		mockState.calls.push(`spawn:${command} ${args.join(" ")}`);
-		const exitCode = mockState.spawnExitCodes.shift() ?? 0;
-		const child = {
+		// Version-discovery calls (`npm view <pkg>@<tag> version`) are recorded
+		// separately so install assertions keep matching only real installs.
+		const isView = args.includes("view");
+		mockState.calls.push(isView ? `spawn-view:${command} ${args.join(" ")}` : `spawn:${command} ${args.join(" ")}`);
+		const exitCode = isView ? 0 : (mockState.spawnExitCodes.shift() ?? 0);
+		const child: {
+			stdout?: { on(event: string, listener: (chunk: Buffer) => void): void };
+			on(event: string, listener: unknown): unknown;
+		} = {
+			stdout: isView
+				? {
+						on(event: string, listener: (chunk: Buffer) => void) {
+							if (event === "data") {
+								queueMicrotask(() => listener(Buffer.from(`${mockState.npmViewVersion}\n`)));
+							}
+						},
+					}
+				: undefined,
 			on(event: string, listener: unknown) {
 				if (event === "close") {
 					queueMicrotask(() => {
@@ -520,10 +536,7 @@ describe("self-update daemon restart", () => {
 			configurable: true,
 		});
 		writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ npmCommand: ["npm"] }, null, 2));
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async () => Response.json({ version: "999.0.0" })),
-		);
+		mockState.npmViewVersion = "999.0.0";
 	});
 
 	afterEach(() => {
@@ -567,10 +580,7 @@ describe("self-update daemon restart", () => {
 
 	it("uses the interactive no-change sentinel only when self-update is unchanged", async () => {
 		process.env[SELF_UPDATE_INTERACTIVE_CHILD_ENV] = "1";
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async () => Response.json({ version: "0.2.6" })),
-		);
+		mockState.npmViewVersion = "0.2.6";
 
 		await expect(handlePackageCommand(["update", "--self"])).resolves.toBe(true);
 
