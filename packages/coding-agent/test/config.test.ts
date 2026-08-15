@@ -239,7 +239,7 @@ describe("detectInstallMethod", () => {
 		const { prefix } = createNpmPrefixInstall();
 		const tarballUrl = "https://downloads.example.test/vsurf/vsurf-0.73.0.tgz";
 
-		const command = getSelfUpdateCommand("vsurf", undefined, tarballUrl, "vsurf");
+		const command = getSelfUpdateCommand("vsurf", undefined, tarballUrl, "vsurf-cli");
 
 		expect(command).toEqual({
 			command: "npm",

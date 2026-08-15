@@ -56,7 +56,7 @@ describe("buildRlmPrompt", () => {
 				"Conversation log: /repo/.vsurf/sessions/session.jsonl",
 				"Recursive agent depth: 0",
 				`Pre-installed Python packages: ${DEFAULT_RLM_EXTRA_IMPORT_LABELS.join(", ")}.`,
-				"Install additional packages with `uv pip install <pkg>` (this is a uv-managed venv with no pip module).",
+				"If a package you need is missing, install it right away with `uv pip install <pkg>` (uv-managed venv, no pip module) — never downgrade the task (e.g. falling back to CSV instead of Excel) just because a library is absent.",
 				"",
 				"Installed Python skill modules (pre-imported): `websearch`, `refine`.",
 				"Read each skill's SKILL.md for its API. Inspect a module with `help(<skill>)` or `dir(<skill>)`, then inspect a documented callable with `inspect.signature(<skill>.<function>)`.",

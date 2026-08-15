@@ -51,7 +51,7 @@ describe("parseSsListeners", () => {
 	});
 
 	it("honors a different app name", () => {
-		expect(parseSsListeners(stdout, "vsurf")).toEqual([]);
+		expect(parseSsListeners(stdout, "other-agent")).toEqual([]);
 	});
 });
 

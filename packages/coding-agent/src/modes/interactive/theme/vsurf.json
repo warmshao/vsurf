@@ -1,6 +1,6 @@
 {
 	"$schema": "./theme-schema.json",
-	"name": "prime",
+	"name": "vsurf",
 	"vars": {
 		"bg": "#050506",
 		"surface": "#0d0d10",
