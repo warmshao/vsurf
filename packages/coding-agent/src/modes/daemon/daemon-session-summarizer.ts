@@ -37,11 +37,14 @@ export interface AgentStatusResult {
 	taskState?: AgentTaskState;
 }
 
-/** Resolve the cheap summary model, or undefined when it has no configured auth. */
-export function resolveSummaryModel(registry: ModelRegistry): Model<Api> | undefined {
-	const model = registry.find(SUMMARY_MODEL_PROVIDER, SUMMARY_MODEL_ID);
-	if (model && registry.hasConfiguredAuth(model)) {
-		return model;
+/** Resolve the summary model: the cheap dedicated model when configured, else the session's own model. */
+export function resolveSummaryModel(registry: ModelRegistry, sessionModel?: Model<Api>): Model<Api> | undefined {
+	const dedicated = registry.find(SUMMARY_MODEL_PROVIDER, SUMMARY_MODEL_ID);
+	if (dedicated && registry.hasConfiguredAuth(dedicated)) {
+		return dedicated;
+	}
+	if (sessionModel && registry.hasConfiguredAuth(sessionModel)) {
+		return sessionModel;
 	}
 	return undefined;
 }
@@ -144,6 +147,8 @@ export interface GenerateAgentStatusParams {
 	registry: ModelRegistry;
 	messages: readonly AgentMessage[];
 	isWorking: boolean;
+	/** Fallback model (the session's own) when the dedicated summary model is unavailable. */
+	sessionModel?: Model<Api>;
 	signal?: AbortSignal;
 }
 
@@ -153,7 +158,7 @@ export async function generateAgentStatus(params: GenerateAgentStatusParams): Pr
 	if (messages.length === 0) {
 		return undefined;
 	}
-	const model = resolveSummaryModel(registry);
+	const model = resolveSummaryModel(registry, params.sessionModel);
 	if (!model) {
 		return undefined;
 	}
@@ -325,6 +330,7 @@ export class DaemonSessionSummarizer {
 				registry: session.modelRegistry,
 				messages: contextMessages,
 				isWorking,
+				sessionModel: session.model,
 				signal: controller.signal,
 			});
 			// A failed classification on an idle session would spin at "working"

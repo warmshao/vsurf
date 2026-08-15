@@ -555,10 +555,6 @@ export function getClientErrorLogPath(): string {
 	return join(getLogsDir(), "client-errors.log");
 }
 
-export function getAgentTracesLogPath(): string {
-	return join(getLogsDir(), "agent-traces.log");
-}
-
 /** Shared structured (JSON lines) log for client, daemon, and provider diagnostics. */
 export function getAgentLogPath(): string {
 	return join(getLogsDir(), "agent.jsonl");
