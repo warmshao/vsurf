@@ -1,5 +1,7 @@
 # Changelog
 
+## [Unreleased]
+
 ## [0.7.6] - 2026-08-20
 
 - Refreshed the generated model catalog from the live source and tracked the cloudflare-ai-gateway `claude-sonnet-4.5` rename in tests. (0.7.5 was tagged but never published — the release workflow failed on the stale catalog id — so 0.7.6 is the first release carrying the 0.7.5 entries.)
