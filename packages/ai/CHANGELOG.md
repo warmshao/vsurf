@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.5] - 2026-08-20
 
 - Fixed a bodyless 400/413 from any OpenAI-compatible endpoint or relay (bad params, unsupported image input, …) being misread as context overflow, which sent the agent into an auto-compaction-and-retry cycle that could never fix the underlying error; the "status code (no body)" overflow signature now only applies to Cerebras, the provider it describes.
 

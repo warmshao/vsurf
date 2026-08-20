@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.5] - 2026-08-20
 
 - Fixed hallucinated method-style calls on prepared Python kernel skills (e.g. `attach_image.attach(...)`): an attribute miss now answers with the correct invocation (`await attach_image(...)`), so the model's next attempt self-corrects instead of retrying blindly.
 
