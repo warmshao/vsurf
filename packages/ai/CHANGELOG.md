@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Refreshed the generated model catalog from the live source and tracked the cloudflare-ai-gateway `claude-sonnet-4.5` rename in tests. (0.7.5 was tagged but never published — the release workflow failed on the stale catalog id — so 0.7.6 is the first release carrying the 0.7.5 entries.)
+
 ## [0.7.5] - 2026-08-20
 
 - Fixed a bodyless 400/413 from any OpenAI-compatible endpoint or relay (bad params, unsupported image input, …) being misread as context overflow, which sent the agent into an auto-compaction-and-retry cycle that could never fix the underlying error; the "status code (no body)" overflow signature now only applies to Cerebras, the provider it describes.
