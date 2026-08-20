@@ -38,6 +38,22 @@ describe("IPython RLM bootstrap", () => {
 		expect(code).toContain("_VSURF_SKILL_IMPORT_ERRORS");
 		expect(code).toContain("globals()[_vsurf_skill_name] = _VsurfUnavailableSkill");
 	});
+
+	it("answers hallucinated method-style skill calls with the correct invocation", () => {
+		// Models occasionally write attach_image.attach(...); the AttributeError
+		// must teach the direct call instead of leaving the model to guess.
+		const code = buildRlmBootstrapCode([
+			{
+				name: "attach-image",
+				importName: "attach_image",
+				packagePath: "/tmp/attach-image",
+				pyprojectPath: "/tmp/attach-image/pyproject.toml",
+			},
+		]);
+
+		expect(code).toContain("def __getattr__(self, name)");
+		expect(code).toContain("call it directly: await {self.__name__}(...)");
+	});
 });
 
 /** Find a python that can launch an ipykernel, or null to skip. */

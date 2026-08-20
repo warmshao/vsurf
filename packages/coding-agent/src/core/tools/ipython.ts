@@ -88,6 +88,17 @@ class _VsurfCallableSkillModule(_vsurf_types.ModuleType):
             return await result
         return result
 
+    def __getattr__(self, name):
+        # Attribute misses only. Models sometimes hallucinate a method-style
+        # call (attach_image.attach(...)); answer with the correct invocation
+        # instead of a bare AttributeError so the next attempt self-corrects.
+        raise AttributeError(
+            f"Python skill '{self.__name__}' has no attribute '{name}'. "
+            f"It is a prepared callable, not an object with methods - "
+            f"call it directly: await {self.__name__}(...) "
+            f"(equivalently await {self.__name__}.run(...))."
+        )
+
 class _VsurfUnavailableSkill:
     def __init__(self, name, error):
         self.__name__ = name
@@ -102,6 +113,16 @@ class _VsurfUnavailableSkill:
 
     async def __call__(self, *args, **kwargs):
         return await self.run(*args, **kwargs)
+
+    def __getattr__(self, name):
+        # Same mis-call guard as _VsurfCallableSkillModule (plus the reason the
+        # skill is unavailable). Internal attrs live in the instance dict, so
+        # this only fires for genuine misses.
+        raise AttributeError(
+            f"Python skill '{self.__name__}' has no attribute '{name}'. "
+            f"Call it directly: await {self.__name__}(...) "
+            f"(currently unavailable: {self._vsurf_import_error})."
+        )
 
     def __repr__(self):
         return f"<unavailable Python skill {self.__name__!r}: {self._vsurf_import_error}>"
