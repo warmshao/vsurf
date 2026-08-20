@@ -20,7 +20,7 @@ import type { AssistantMessage } from "../types.js";
  * - GitHub Copilot: "prompt token count of X exceeds the limit of Y"
  * - MiniMax: "invalid params, context window exceeds limit"
  * - Kimi For Coding: "Your request exceeded model token limit: X (requested: Y)"
- * - Cerebras: "400/413 status code (no body)"
+ * - Cerebras: "400/413 status code (no body)" (matched only for provider === "cerebras")
  * - Mistral: "Prompt contains X tokens ... too large for model with Y maximum context length"
  * - z.ai: Does NOT error, accepts overflow silently - handled via usage.input > contextWindow
  * - Xiaomi MiMo: Truncates input to fill contextWindow exactly, then returns finish_reason "length"
@@ -48,8 +48,22 @@ const OVERFLOW_PATTERNS = [
 	/context[_ ]length[_ ]exceeded/i, // Generic fallback
 	/too many tokens/i, // Generic fallback
 	/token limit exceeded/i, // Generic fallback
-	/^4(?:00|13)\s*(?:status code)?\s*\(no body\)/i, // Cerebras: 400/413 with no body
 ];
+
+/**
+ * Cerebras signals context overflow as a bare HTTP status with an empty body
+ * ("400 status code (no body)" / "413 status code (no body)" — the OpenAI
+ * client's formatting for a bodyless error response).
+ *
+ * This shape is NOT overflow-specific: ANY OpenAI-compatible endpoint or relay
+ * that answers a 400 with an empty/non-JSON body (bad params, unsupported
+ * image input, model not found, …) produces the identical string, and a custom
+ * provider's 400 must not be misread as context overflow — that sends the
+ * agent into a compaction-and-retry cycle for an error compaction can never
+ * fix. Only trust this pattern from Cerebras itself (checked against
+ * `message.provider`).
+ */
+const CEREBRAS_NO_BODY_OVERFLOW_PATTERN = /^4(?:00|13)\s*(?:status code)?\s*\(no body\)/i;
 
 /**
  * Patterns that indicate non-overflow errors (e.g. rate limiting, server errors).
@@ -119,8 +133,15 @@ export function isContextOverflow(message: AssistantMessage, contextWindow?: num
 	if (message.stopReason === "error" && message.errorMessage) {
 		// Skip messages matching known non-overflow patterns (e.g. throttling / rate-limit)
 		const isNonOverflow = NON_OVERFLOW_PATTERNS.some((p) => p.test(message.errorMessage!));
-		if (!isNonOverflow && OVERFLOW_PATTERNS.some((p) => p.test(message.errorMessage!))) {
-			return true;
+		if (!isNonOverflow) {
+			if (OVERFLOW_PATTERNS.some((p) => p.test(message.errorMessage!))) {
+				return true;
+			}
+			// Bodyless 400/413 is only a trustworthy overflow signal from Cerebras;
+			// for every other provider it just means "request rejected" (see above).
+			if (message.provider === "cerebras" && CEREBRAS_NO_BODY_OVERFLOW_PATTERN.test(message.errorMessage)) {
+				return true;
+			}
 		}
 	}
 

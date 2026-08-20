@@ -62,6 +62,21 @@ describe("isContextOverflow", () => {
 		expect(isContextOverflow(message, 200000)).toBe(false);
 	});
 
+	it("treats a bodyless 400 as overflow only for Cerebras", () => {
+		const cerebrasMessage = { ...createErrorMessage("400 status code (no body)"), provider: "cerebras" };
+		expect(isContextOverflow(cerebrasMessage, 200000)).toBe(true);
+	});
+
+	it("does not treat a bodyless 400 from an OpenAI-compatible relay as overflow", () => {
+		// A relay rejecting a request (bad params, unsupported image input, …)
+		// with an empty body produces the same "400 status code (no body)"
+		// string — that is not context overflow and must not trigger compaction.
+		const message = { ...createErrorMessage("400 status code (no body)"), provider: "openai-compatible" };
+		expect(isContextOverflow(message, 200000)).toBe(false);
+		const cerebras413 = { ...createErrorMessage("413 status code (no body)"), provider: "cerebras" };
+		expect(isContextOverflow(cerebras413, 200000)).toBe(true);
+	});
+
 	function createLengthStopMessage(input: number, cacheRead: number, output: number): AssistantMessage {
 		return {
 			role: "assistant",
