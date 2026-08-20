@@ -1,6 +1,6 @@
 {
 	"name": "vsurf-agent",
-	"version": "0.7.5",
+	"version": "0.7.6",
 	"description": "General-purpose agent with transport abstraction, state management, and attachment support",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -17,7 +17,7 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"vsurf-ai": "^0.7.5",
+		"vsurf-ai": "^0.7.6",
 		"typebox": "^1.3.9"
 	},
 	"keywords": [
