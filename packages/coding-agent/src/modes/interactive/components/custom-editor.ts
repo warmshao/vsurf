@@ -199,8 +199,11 @@ export class CustomEditor extends Editor {
 		}
 
 		// Check all other app actions
+		// A raw "\n" is Shift+Enter's newline in some terminals, so it goes to the
+		// editor even though it decodes as ctrl+j.
 		for (const [action, handler] of this.actionHandlers) {
 			if (
+				data !== "\n" &&
 				action !== "app.input.clear" &&
 				action !== "app.exit" &&
 				(action !== "app.shortcuts" || this.getText().length === 0) &&

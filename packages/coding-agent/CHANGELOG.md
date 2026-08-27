@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Added `app.edits.expand` (`ctrl+j`) to toggle edit diffs; diffs are now shown only by this toggle, and `ctrl+o` no longer affects them.
+- Changed edit rendering so the `╰─ <path> +N -M` summary line is always visible and `ctrl+j` toggles the diff inline beneath it.
+- Fixed Shift+Enter no longer inserting a newline in terminals that send a literal `\n`: the byte decoded as `ctrl+j` and triggered the edit-diff toggle instead of the editor newline.
 - Added a `thinking` option to `rlm.run` for spawning subagents with an explicit reasoning level; invalid levels for the resolved child model fail spawn.
 - Fixed model searches ranking stronger matches ahead of weaker signed-in matches while preferring signed-in providers for equivalent results.
 - Changed Agents View subagent rows to show stable `name · model/effort · summary` metadata.
