@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Added a `thinking` option to `rlm.run` for spawning subagents with an explicit reasoning level; invalid levels for the resolved child model fail spawn.
 - Fixed model searches ranking stronger matches ahead of weaker signed-in matches while preferring signed-in providers for equivalent results.
 - Changed Agents View subagent rows to show stable `name · model/effort · summary` metadata.
 - Changed the agents view splash hint from "type to start" to "type to search sessions".
