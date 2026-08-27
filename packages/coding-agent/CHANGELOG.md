@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Fixed model searches ranking stronger matches ahead of weaker signed-in matches while preferring signed-in providers for equivalent results.
+- Changed Agents View subagent rows to show stable `name · model/effort · summary` metadata.
+- Changed the agents view splash hint from "type to start" to "type to search sessions".
+
 ## [0.7.6] - 2026-08-20
 
 ## [0.7.5] - 2026-08-20
