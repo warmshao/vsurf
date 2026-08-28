@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Changed the default RLM maximum recursion depth for new sessions from 1 to 2.
 - Fixed first IPython calls after an upgrade failing with a raw "Operation was not possible or timed out": kernel startup now tolerates cold venv boots (30s budget, crashes still fail fast via the exit handler), and zmq socket-teardown rejections surface as actionable retriable kernel errors.
 - Enabled /fast with OpenAI API-key authentication for GPT-5.4/GPT-5.5/GPT-5.6 and updated the unavailable message.
 - Changed the subagents summary under the prompt into a bordered agents tile with color-coded running/idle/inactive counts and a right-aligned open hint.
