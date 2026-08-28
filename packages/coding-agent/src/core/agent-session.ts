@@ -6977,10 +6977,11 @@ export class AgentSession {
 
 	// Added to history (not a nextTurn message) so it also reaches the continue()-driven
 	// auto-compaction resume, which never injects nextTurn messages.
-	private async _notifyKernelStateAfterCompaction(): Promise<void> {
+	private async _syncKernelStateAfterCompaction(): Promise<void> {
 		const provisioner = this._ipythonKernelProvisioner;
 		// No kernel means no state to remind about; only stay silent in that case.
 		if (!provisioner?.hasRunningKernel) return;
+		const pruned = await provisioner.pruneOversizedVariables().catch(() => null);
 		// Bound the probe so a wedged kernel can't stall recovery, and abort it on timeout so
 		// the kernel's serialized execution queue isn't left occupied by a never-resolving cell.
 		const abort = new AbortController();
@@ -7001,9 +7002,13 @@ export class AgentSession {
 				: names.length > 0
 					? ` These names are still defined: ${names.join(", ")}.`
 					: " You have not defined any names yet.";
+		const prunedDetail =
+			pruned && pruned.length > 0
+				? ` Variables above the per-variable snapshot limit were removed: ${pruned.join(", ")}.`
+				: "";
 		const content = [
 			"<ipython_state>",
-			`Your IPython kernel persisted through compaction; all variables, imports, and helpers you defined remain available.${detail}`,
+			`Your IPython kernel persisted through compaction; its remaining variables, imports, and helpers are still available.${prunedDetail}${detail}`,
 			"</ipython_state>",
 		].join("\n");
 		const message = {
@@ -7254,7 +7259,7 @@ export class AgentSession {
 				fromExtension,
 			});
 		}
-		await this._notifyKernelStateAfterCompaction();
+		await this._syncKernelStateAfterCompaction();
 		await this._reapDeletedRlmSubagentRuntimesAfterCompaction();
 
 		return { summary, firstKeptEntryId, tokensBefore, details };

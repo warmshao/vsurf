@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Fixed large IPython variables repeatedly slowing later turns by excluding them from persistent snapshots and removing them when context is compacted.
 - Fixed new top-level daemon sessions inheriting an RLM child depth from the supervisor process.
 - Added `app.edits.expand` (`ctrl+j`) to toggle edit diffs; diffs are now shown only by this toggle, and `ctrl+o` no longer affects them.
 - Changed edit rendering so the `╰─ <path> +N -M` summary line is always visible and `ctrl+j` toggles the diff inline beneath it.

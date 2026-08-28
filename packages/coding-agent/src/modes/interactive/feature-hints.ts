@@ -72,7 +72,7 @@ export const FEATURE_HINTS: readonly FeatureHintDefinition[] = [
 	},
 	{
 		id: "persistent-ipython",
-		getText: () => "VSurf keeps IPython variables and helpers between turns and compactions.",
+		getText: () => "Compaction removes IPython variables over 16 MiB; smaller state persists.",
 	},
 	{
 		id: "context-usage",
