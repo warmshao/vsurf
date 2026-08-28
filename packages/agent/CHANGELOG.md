@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Added `AgentContinueError` with a stable `code` (`busy` / `nothing-to-continue`) so callers classify `Agent.continue` precondition failures by code instead of error message text.
+
 ## [0.7.6] - 2026-08-20
 
 ## [0.7.5] - 2026-08-20
