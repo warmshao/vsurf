@@ -2736,7 +2736,11 @@ export class AgentSession {
 		message: AssistantMessage,
 	): Promise<AgentMessage | undefined> {
 		const queuedMessage = this._queuedAutonomousThresholdContinuations.get(message);
-		if (queuedMessage && this._postCompactionContinuationMessages.includes(queuedMessage)) {
+		if (
+			queuedMessage &&
+			this._postCompactionContinuationMessages.includes(queuedMessage) &&
+			this._hasUndeliveredThresholdContinuation(queuedMessage)
+		) {
 			return queuedMessage;
 		}
 		const snapshot = this._snapshotAutonomousRuntimeState();
@@ -2766,6 +2770,16 @@ export class AgentSession {
 			}),
 		);
 		return autonomousMessage;
+	}
+
+	private _hasUndeliveredThresholdContinuation(queuedMessage: AgentMessage): boolean {
+		return this._actionStore.unfinishedActions().some((action) => {
+			if (action.payload.kind !== "turn" || primaryDeliveryRecord(action).message !== queuedMessage) {
+				return false;
+			}
+			const state = action.lifecycle.state;
+			return state === "queued" || state === "selected" || state === "preparing" || state === "committing";
+		});
 	}
 
 	private _clearQueuedAutonomousContinuations(
