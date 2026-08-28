@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Fixed the working-status elapsed timer restarting at 0s after leaving and re-entering a session or re-attaching to it: the timer is now anchored to the in-flight turn's user message and keeps counting.
 - Fixed credentials configured as env var names resolving to the literal variable name when the variable is set but empty: an empty env var now reports a missing credential.
 - Dimmed the queued-message browse controls header so it reads as a hint, not prompt text.
 - Fixed the Agents View heartbeat refresh failing entirely when any resident worker was terminally failed: failed workers are now excluded from the global catalog while recovering.
