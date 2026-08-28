@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Fixed ACP assistant chunks to identify message boundaries across autonomous turns.
 - Fixed syntax highlighting in the expanded python tool-call view: triple-quoted strings spanning multiple lines now keep their string color instead of only the first line.
 - Changed the default RLM maximum recursion depth for new sessions from 1 to 2.
 - Fixed first IPython calls after an upgrade failing with a raw "Operation was not possible or timed out": kernel startup now tolerates cold venv boots (30s budget, crashes still fail fast via the exit handler), and zmq socket-teardown rejections surface as actionable retriable kernel errors.
