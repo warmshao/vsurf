@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Enabled /fast with OpenAI API-key authentication for GPT-5.4/GPT-5.5/GPT-5.6 and updated the unavailable message.
 - Changed the subagents summary under the prompt into a bordered agents tile with color-coded running/idle/inactive counts and a right-aligned open hint.
 - Fixed the working-status elapsed timer restarting at 0s after leaving and re-entering a session or re-attaching to it: the timer is now anchored to the in-flight turn's user message and keeps counting.
 - Fixed credentials configured as env var names resolving to the literal variable name when the variable is set but empty: an empty env var now reports a missing credential.
