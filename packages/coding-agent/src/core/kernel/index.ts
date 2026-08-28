@@ -54,7 +54,11 @@ export function resolvePortsResolveTimeoutMs(): number {
 	}
 	return Math.min(MAX_PORTS_RESOLVE_TIMEOUT_MS, parsed);
 }
-const READY_TIMEOUT_MS = 5000;
+// Generous backstop for a kernel that is alive but wedged: crashes are detected
+// within one 25ms poll via the exit handler, warm boots return in under a second,
+// and a cold first boot after a venv (re)provision may legitimately need tens of
+// seconds of imports before it binds ports and answers the ready probe.
+const READY_TIMEOUT_MS = 30_000;
 // Loopback PUB/SUB subscription propagation is usually sub-ms, but keep a small guard before first execute.
 const IOPUB_SUBSCRIBE_DELAY_MS = 50;
 const DEFAULT_MAX_OUTPUT_CHARS = 65536;
@@ -892,7 +896,7 @@ export class KernelManager {
 
 		const msg = buildMessage("kernel_info_request", {}, this.session, this.options.username);
 		const requestMsgId = msg.header.msg_id;
-		await shell.send(encode(msg, conn.key));
+		await this.translateSocketClosure(shell.send(encode(msg, conn.key)));
 
 		const startedAt = Date.now();
 		while (Date.now() - startedAt < READY_TIMEOUT_MS) {
@@ -903,7 +907,7 @@ export class KernelManager {
 
 			const remaining = READY_TIMEOUT_MS - (Date.now() - startedAt);
 			const winner = await Promise.race([
-				shell.receive().then((frames) => ({ kind: "frames" as const, frames })),
+				this.translateSocketClosure(shell.receive()).then((frames) => ({ kind: "frames" as const, frames })),
 				sleep(remaining).then(() => ({ kind: "timeout" as const })),
 			]);
 			if (winner.kind === "timeout") break;
@@ -920,6 +924,26 @@ export class KernelManager {
 		throw new Error(
 			`Kernel did not respond to kernel_info_request within ${READY_TIMEOUT_MS}ms. stderr tail:\n${tail || "(empty)"}`,
 		);
+	}
+
+	/**
+	 * A zmq operation interrupted by socket teardown rejects with the raw libzmq
+	 * EAGAIN text ("Operation was not possible or timed out"); surface the kernel
+	 * lifecycle instead so callers see an actionable, retriable failure.
+	 */
+	private async translateSocketClosure<T>(operation: Promise<T>): Promise<T> {
+		try {
+			return await operation;
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			if (message.includes("not possible or timed out") || message.includes("Socket is closed")) {
+				const tail = this.kernelStderr.slice(-1024);
+				throw new Error(
+					`IPython kernel channel closed while ${this.state === "starting" ? "starting up" : "communicating"} (retriable). stderr tail:\n${tail || "(empty)"}`,
+				);
+			}
+			throw error;
+		}
 	}
 
 	async execute(code: string, opts: ExecuteOptions = {}): Promise<ExecuteResult> {
@@ -1057,7 +1081,7 @@ export class KernelManager {
 				this.lastCellCode = code;
 			}
 			try {
-				const sendPromise = shell.send(encode(msg, conn.key));
+				const sendPromise = this.translateSocketClosure(shell.send(encode(msg, conn.key)));
 				sendPromise.catch(() => undefined);
 				await Promise.race([sendPromise, result.promise.then(() => undefined)]);
 				if (this.activeExecution === execution && execution.status !== "aborted") {
