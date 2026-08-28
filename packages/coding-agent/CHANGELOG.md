@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Dimmed the queued-message browse controls header so it reads as a hint, not prompt text.
 - Fixed the Agents View heartbeat refresh failing entirely when any resident worker was terminally failed: failed workers are now excluded from the global catalog while recovering.
 - Fixed active goals stalling after a mid-goal automatic compaction when the previous continuation prompt was already running: only undelivered continuations deduplicate, so a fresh continuation is queued instead of being suppressed.
 - Fixed large IPython variables repeatedly slowing later turns by excluding them from persistent snapshots and removing them when context is compacted.
