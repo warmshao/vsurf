@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Fixed new top-level daemon sessions inheriting an RLM child depth from the supervisor process.
 - Added `app.edits.expand` (`ctrl+j`) to toggle edit diffs; diffs are now shown only by this toggle, and `ctrl+o` no longer affects them.
 - Changed edit rendering so the `╰─ <path> +N -M` summary line is always visible and `ctrl+j` toggles the diff inline beneath it.
 - Fixed Shift+Enter no longer inserting a newline in terminals that send a literal `\n`: the byte decoded as `ctrl+j` and triggered the edit-diff toggle instead of the editor newline.
