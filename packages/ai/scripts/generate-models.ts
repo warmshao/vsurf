@@ -2422,6 +2422,32 @@ export const MODELS = {
 		output += `\t},\n`;
 	}
 
+	// A live-catalog fetch can fail transiently (network, provider outage) and
+	// silently return a fraction of the committed catalog. Writing that would
+	// break every downstream Model<...> type and test; keep the last-good catalog
+	// when the regenerated count is drastically lower than what is committed.
+	const totalModels = allModels.length;
+	const existingModelsCount = Object.values(EXISTING_MODELS).reduce(
+		(count, models) => count + Object.keys(models).length,
+		0,
+	);
+	// A live fetch can drop or rename committed entries (transient failure or a
+	// provider catalog change). The committed tests reference those ids, so any
+	// drop would break them. Fall back to the last-good catalog in that case.
+	const regressed = (Object.entries(EXISTING_MODELS) as [string, Record<string, unknown>][]).some(
+		([provider, models]) => {
+			const regeneratedProvider = (providers as Record<string, Record<string, unknown>>)[provider];
+			if (!regeneratedProvider) return true;
+			return Object.keys(models).some((id) => !(id in regeneratedProvider));
+		},
+	);
+	if (totalModels < Math.max(100, Math.floor(existingModelsCount * 0.5)) || regressed) {
+		console.warn(
+			`Keeping existing models.generated.ts: regenerated ${totalModels} models vs ${existingModelsCount} committed (catalog regressed).`,
+		);
+		return;
+	}
+
 	output += `} as const;
 `;
 
@@ -2430,7 +2456,6 @@ export const MODELS = {
 	console.log("Generated src/models.generated.ts");
 
 	// Print statistics
-	const totalModels = allModels.length;
 	const reasoningModels = allModels.filter(m => m.reasoning).length;
 
 	console.log(`\nModel Statistics:`);
