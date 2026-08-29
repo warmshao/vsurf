@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+- Added a `session_before_refine` extension hook: extensions can replace the built-in refinement planner, skip a round, or fall back to the default planner; rollback refinements bypass the hook.
+
 ## [0.7.7] - 2026-08-29
 
 - Fixed ACP assistant chunks to identify message boundaries across autonomous turns.
