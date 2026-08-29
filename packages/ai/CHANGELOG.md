@@ -1,4 +1,4 @@
-# Changelog
+## [Unreleased]
 
 ## [0.7.7] - 2026-08-29
 
