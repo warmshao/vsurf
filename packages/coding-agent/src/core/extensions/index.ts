@@ -103,6 +103,7 @@ export type {
 	ProviderConfig,
 	ProviderModelConfig,
 	RefineCompleteEvent,
+	RefinePreparation,
 	// Commands
 	RegisteredCommand,
 	RegisteredTool,
@@ -118,6 +119,8 @@ export type {
 	SessionBeforeCompactResult,
 	SessionBeforeForkEvent,
 	SessionBeforeForkResult,
+	SessionBeforeRefineEvent,
+	SessionBeforeRefineResult,
 	SessionBeforeSwitchEvent,
 	SessionBeforeSwitchResult,
 	SessionBeforeTreeEvent,
