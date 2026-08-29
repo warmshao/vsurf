@@ -51,7 +51,7 @@
 		"vsurf-agent": "^0.7.7",
 		"vsurf-ai": "^0.7.7",
 		"vsurf-tui": "^0.7.7",
-		"@puppeteer/browsers": "^2.10.0",
+		"@puppeteer/browsers": "^3.2.1",
 		"@silvia-odwyer/photon-node": "^0.3.4",
 		"chalk": "^5.5.0",
 		"cli-highlight": "^2.1.11",
