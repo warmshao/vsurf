@@ -1852,7 +1852,7 @@ describe("AgentSession rlm recursion", () => {
 		const root = createSession();
 		const originalMessages = [...root.messages];
 
-		expect(root.getRlmMaxDepthStatus()).toEqual({ maxDepth: 1, source: "default" });
+		expect(root.getRlmMaxDepthStatus()).toEqual({ maxDepth: 2, source: "default" });
 		await expect(root.setRlmMaxDepth(-1)).rejects.toThrow("non-negative integer");
 		await root.setRlmMaxDepth(3);
 
@@ -1969,7 +1969,7 @@ describe("AgentSession rlm recursion", () => {
 			source: "chat",
 			globalSaved: true,
 		});
-		expect(existing.rlmMaxDepth).toBe(1);
+		expect(existing.rlmMaxDepth).toBe(2);
 		const freshSettings = SettingsManager.create(tempDir, tempDir);
 		const fresh = createSession({ settingsManager: freshSettings });
 		expect(fresh.getRlmMaxDepthStatus()).toEqual({ maxDepth: 4, source: "global" });
@@ -2047,7 +2047,7 @@ describe("AgentSession rlm recursion", () => {
 		});
 
 		await expect(root.setRlmMaxDepth(0)).rejects.toThrow("disk full");
-		expect(root.rlmMaxDepth).toBe(1);
+		expect(root.rlmMaxDepth).toBe(2);
 		expect(root.systemPrompt).toBe(originalPrompt);
 		expect(
 			root.sessionManager
@@ -2166,6 +2166,17 @@ describe("AgentSession rlm recursion", () => {
 		await expect(root.runRlmChild("nested", { temperature: 0 })).rejects.toThrow(
 			"Unsupported rlm.run kwargs: temperature",
 		);
+	});
+
+	it("rejects a non-string rlm.run thinking kwarg", async () => {
+		const root = createSession();
+
+		await expect(root.runRlmChild("nested", { thinking: 3 })).rejects.toThrow("rlm.run thinking must be a string");
+	});
+
+	it("rejects an unknown rlm.run thinking level", async () => {
+		const root = createSession();
+		await expect(root.runRlmChild("nested", { thinking: "ultra" })).rejects.toThrow("must be one of");
 	});
 
 	it("cancels active rlm children when the parent session is disposed", async () => {

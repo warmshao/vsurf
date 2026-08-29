@@ -15,6 +15,7 @@ import {
 	buildRestoreCode,
 	buildSnapshotCode,
 	DEFAULT_SNAPSHOT_MAX_BYTES,
+	DEFAULT_SNAPSHOT_MAX_VARIABLE_BYTES,
 	parseListNamesResult,
 	parseRestoreResult,
 	parseSnapshotResult,
@@ -53,7 +54,11 @@ export function resolvePortsResolveTimeoutMs(): number {
 	}
 	return Math.min(MAX_PORTS_RESOLVE_TIMEOUT_MS, parsed);
 }
-const READY_TIMEOUT_MS = 5000;
+// Generous backstop for a kernel that is alive but wedged: crashes are detected
+// within one 25ms poll via the exit handler, warm boots return in under a second,
+// and a cold first boot after a venv (re)provision may legitimately need tens of
+// seconds of imports before it binds ports and answers the ready probe.
+const READY_TIMEOUT_MS = 30_000;
 // Loopback PUB/SUB subscription propagation is usually sub-ms, but keep a small guard before first execute.
 const IOPUB_SUBSCRIBE_DELAY_MS = 50;
 const DEFAULT_MAX_OUTPUT_CHARS = 65536;
@@ -66,6 +71,7 @@ const SNAPSHOT_MAX_OUTPUT_CHARS = 1_000_000;
 // Cap how long a graceful dispose waits on the final snapshot; the debounced
 // on-disk copy is the fallback if this is exceeded.
 const SNAPSHOT_DISPOSE_TIMEOUT_MS = 5000;
+const SNAPSHOT_EXECUTION_TIMEOUT_MS = 5000;
 const KERNEL_ABORT_GRACE_MS = 1000;
 const KERNEL_BUSY_REUSE_WAIT_MS = 5000;
 const KERNEL_BUSY_INTERRUPT_INTERVAL_MS = 500;
@@ -174,8 +180,10 @@ export interface KernelSnapshotConfig {
 	path: string;
 	/** Absolute path for the JSON manifest written alongside the payload. */
 	manifestPath: string;
-	/** Skip variables (and abort the payload) above this many bytes. Default 256 MiB. */
+	/** Maximum aggregate snapshot size. Default 256 MiB. */
 	maxBytes?: number;
+	/** Maximum serialized size of one variable. Default 16 MiB. */
+	maxVariableBytes?: number;
 	/** Debounce window for the auto-snapshot after a successful execution. Default 1500 ms. */
 	debounceMs?: number;
 }
@@ -888,7 +896,7 @@ export class KernelManager {
 
 		const msg = buildMessage("kernel_info_request", {}, this.session, this.options.username);
 		const requestMsgId = msg.header.msg_id;
-		await shell.send(encode(msg, conn.key));
+		await this.translateSocketClosure(shell.send(encode(msg, conn.key)));
 
 		const startedAt = Date.now();
 		while (Date.now() - startedAt < READY_TIMEOUT_MS) {
@@ -899,7 +907,7 @@ export class KernelManager {
 
 			const remaining = READY_TIMEOUT_MS - (Date.now() - startedAt);
 			const winner = await Promise.race([
-				shell.receive().then((frames) => ({ kind: "frames" as const, frames })),
+				this.translateSocketClosure(shell.receive()).then((frames) => ({ kind: "frames" as const, frames })),
 				sleep(remaining).then(() => ({ kind: "timeout" as const })),
 			]);
 			if (winner.kind === "timeout") break;
@@ -918,6 +926,26 @@ export class KernelManager {
 		);
 	}
 
+	/**
+	 * A zmq operation interrupted by socket teardown rejects with the raw libzmq
+	 * EAGAIN text ("Operation was not possible or timed out"); surface the kernel
+	 * lifecycle instead so callers see an actionable, retriable failure.
+	 */
+	private async translateSocketClosure<T>(operation: Promise<T>): Promise<T> {
+		try {
+			return await operation;
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			if (message.includes("not possible or timed out") || message.includes("Socket is closed")) {
+				const tail = this.kernelStderr.slice(-1024);
+				throw new Error(
+					`IPython kernel channel closed while ${this.state === "starting" ? "starting up" : "communicating"} (retriable). stderr tail:\n${tail || "(empty)"}`,
+				);
+			}
+			throw error;
+		}
+	}
+
 	async execute(code: string, opts: ExecuteOptions = {}): Promise<ExecuteResult> {
 		const result = await this.enqueueExecute(code, opts);
 		// Refresh the on-disk snapshot after real work so a later resume (or a
@@ -929,7 +957,11 @@ export class KernelManager {
 	}
 
 	/** Queue and run a cell, serializing against all other executions. */
-	private async enqueueExecute(code: string, opts: ExecuteOptions): Promise<ExecuteResult> {
+	private async enqueueExecute(
+		code: string,
+		opts: ExecuteOptions,
+		executionTimeoutMs?: number,
+	): Promise<ExecuteResult> {
 		if (opts.signal?.aborted) {
 			return { stdout: "", stderr: "", status: "aborted", durationMs: 0 };
 		}
@@ -946,6 +978,7 @@ export class KernelManager {
 		await prev;
 
 		const started = Date.now();
+		let executionTimeout: ReturnType<typeof globalThis.setTimeout> | undefined;
 		try {
 			await this.waitForActiveExecutionToClearForReuse(opts.signal);
 			if (opts.signal?.aborted) {
@@ -954,8 +987,17 @@ export class KernelManager {
 			if ((this.state as string) === "shutdown") {
 				throw new Error("Kernel has been shut down");
 			}
-			return await this.executeInner(code, opts, started);
+			if (executionTimeoutMs === undefined) {
+				return await this.executeInner(code, opts, started);
+			}
+
+			const controller = new AbortController();
+			executionTimeout = globalThis.setTimeout(() => controller.abort(), executionTimeoutMs);
+			executionTimeout.unref?.();
+			const signal = opts.signal ? AbortSignal.any([opts.signal, controller.signal]) : controller.signal;
+			return await this.executeInner(code, { ...opts, signal }, started);
 		} finally {
+			if (executionTimeout) globalThis.clearTimeout(executionTimeout);
 			resolveNext();
 		}
 	}
@@ -1039,7 +1081,7 @@ export class KernelManager {
 				this.lastCellCode = code;
 			}
 			try {
-				const sendPromise = shell.send(encode(msg, conn.key));
+				const sendPromise = this.translateSocketClosure(shell.send(encode(msg, conn.key)));
 				sendPromise.catch(() => undefined);
 				await Promise.race([sendPromise, result.promise.then(() => undefined)]);
 				if (this.activeExecution === execution && execution.status !== "aborted") {
@@ -1521,13 +1563,36 @@ export class KernelManager {
 	 * the kernel isn't running or no snapshot target was configured. Never throws.
 	 */
 	async snapshotState(): Promise<SnapshotResult | null> {
+		return this.captureSnapshot();
+	}
+
+	/** Persist the namespace, then remove variables above the per-variable cap. */
+	async pruneOversizedVariables(): Promise<SnapshotResult | null> {
+		return this.captureSnapshot({ executionTimeoutMs: SNAPSHOT_EXECUTION_TIMEOUT_MS, pruneOversized: true });
+	}
+
+	private async captureSnapshot(
+		options: { executionTimeoutMs?: number; pruneOversized?: boolean } = {},
+	): Promise<SnapshotResult | null> {
 		const cfg = this.options.snapshot;
 		if (!cfg || !this.isRunning) return null;
-		const code = buildSnapshotCode(cfg.path, cfg.manifestPath, cfg.maxBytes ?? DEFAULT_SNAPSHOT_MAX_BYTES);
+		const code = buildSnapshotCode(
+			cfg.path,
+			cfg.manifestPath,
+			cfg.maxBytes ?? DEFAULT_SNAPSHOT_MAX_BYTES,
+			cfg.maxVariableBytes ?? DEFAULT_SNAPSHOT_MAX_VARIABLE_BYTES,
+			options.pruneOversized,
+		);
 		try {
-			const r = await this.enqueueExecute(code, { maxOutputChars: SNAPSHOT_MAX_OUTPUT_CHARS, internal: true });
+			const r = await this.enqueueExecute(
+				code,
+				{ maxOutputChars: SNAPSHOT_MAX_OUTPUT_CHARS, internal: true },
+				options.executionTimeoutMs,
+			);
 			if (r.status !== "ok") {
-				this.appendKernelDiagnostic(`state snapshot failed: ${r.error?.evalue ?? r.stderr}`);
+				this.appendKernelDiagnostic(
+					`state snapshot ${r.status === "aborted" ? "timed out" : "failed"}: ${r.error?.evalue ?? r.stderr}`,
+				);
 				return null;
 			}
 			return parseSnapshotResult(r.stdout, cfg.path);
@@ -1585,7 +1650,7 @@ export class KernelManager {
 		if (this.snapshotTimer) clearTimeout(this.snapshotTimer);
 		this.snapshotTimer = globalThis.setTimeout(() => {
 			this.snapshotTimer = undefined;
-			void this.snapshotState();
+			void this.captureSnapshot({ executionTimeoutMs: SNAPSHOT_EXECUTION_TIMEOUT_MS });
 		}, cfg.debounceMs ?? DEFAULT_SNAPSHOT_DEBOUNCE_MS);
 		if (this.snapshotTimer && typeof this.snapshotTimer === "object" && "unref" in this.snapshotTimer) {
 			this.snapshotTimer.unref();

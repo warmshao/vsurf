@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+- Fixed ACP assistant chunks to identify message boundaries across autonomous turns.
+- Fixed syntax highlighting in the expanded python tool-call view: triple-quoted strings spanning multiple lines now keep their string color instead of only the first line.
+- Changed the default RLM maximum recursion depth for new sessions from 1 to 2.
+- Fixed first IPython calls after an upgrade failing with a raw "Operation was not possible or timed out": kernel startup now tolerates cold venv boots (30s budget, crashes still fail fast via the exit handler), and zmq socket-teardown rejections surface as actionable retriable kernel errors.
+- Enabled /fast with OpenAI API-key authentication for GPT-5.4/GPT-5.5/GPT-5.6 and updated the unavailable message.
+- Changed the subagents summary under the prompt into a bordered agents tile with color-coded running/idle/inactive counts and a right-aligned open hint.
+- Fixed the working-status elapsed timer restarting at 0s after leaving and re-entering a session or re-attaching to it: the timer is now anchored to the in-flight turn's user message and keeps counting.
+- Fixed credentials configured as env var names resolving to the literal variable name when the variable is set but empty: an empty env var now reports a missing credential.
+- Dimmed the queued-message browse controls header so it reads as a hint, not prompt text.
+- Fixed the Agents View heartbeat refresh failing entirely when any resident worker was terminally failed: failed workers are now excluded from the global catalog while recovering.
+- Fixed active goals stalling after a mid-goal automatic compaction when the previous continuation prompt was already running: only undelivered continuations deduplicate, so a fresh continuation is queued instead of being suppressed.
+- Fixed large IPython variables repeatedly slowing later turns by excluding them from persistent snapshots and removing them when context is compacted.
+- Fixed new top-level daemon sessions inheriting an RLM child depth from the supervisor process.
+- Added `app.edits.expand` (`ctrl+j`) to toggle edit diffs; diffs are now shown only by this toggle, and `ctrl+o` no longer affects them.
+- Changed edit rendering so the `╰─ <path> +N -M` summary line is always visible and `ctrl+j` toggles the diff inline beneath it.
+- Fixed Shift+Enter no longer inserting a newline in terminals that send a literal `\n`: the byte decoded as `ctrl+j` and triggered the edit-diff toggle instead of the editor newline.
+- Added a `thinking` option to `rlm.run` for spawning subagents with an explicit reasoning level; invalid levels for the resolved child model fail spawn.
+- Fixed model searches ranking stronger matches ahead of weaker signed-in matches while preferring signed-in providers for equivalent results.
+- Changed Agents View subagent rows to show stable `name · model/effort · summary` metadata.
+- Changed the agents view splash hint from "type to start" to "type to search sessions".
+
 ## [0.7.6] - 2026-08-20
 
 ## [0.7.5] - 2026-08-20

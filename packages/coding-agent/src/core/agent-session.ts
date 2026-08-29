@@ -69,6 +69,7 @@ import {
 	isAgentSessionMessage,
 	normalizeAgentSessionMessage,
 	parseAgentSessionMessagePromptId,
+	startsAgentRun,
 } from "./agent-messages.js";
 import {
 	AGENT_OBSERVE_SKILL_NAME,
@@ -231,6 +232,7 @@ import {
 	findRlmModelMatches,
 	normalizeRequestedRlmSubagentModel,
 	normalizeRequestedRlmSubagentSessionName,
+	normalizeRequestedRlmSubagentThinkingLevel,
 	type RlmDeleteSubagentResult,
 	type RlmFindModelsResult,
 	type RlmListSubagentsResult,
@@ -276,6 +278,7 @@ import {
 } from "./slash-commands.js";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.js";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.js";
+import { THINKING_LEVELS } from "./thinking-levels.js";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.js";
 import { createAllToolDefinitions } from "./tools/index.js";
 import { IpythonKernelProvisioner } from "./tools/ipython.js";
@@ -972,9 +975,6 @@ interface RlmSubagentModelSelection {
 // Constants
 // ============================================================================
 
-/** Standard thinking levels */
-const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-
 /** Cap on the post-compaction kernel namespace probe so a wedged kernel can't stall recovery. */
 const KERNEL_STATE_LISTING_TIMEOUT_MS = 5000;
 const RLM_MAX_DEPTH_STATE_CUSTOM_TYPE = "rlm_max_depth_state";
@@ -1603,7 +1603,7 @@ export class AgentSession {
 		if (env !== undefined && env !== "") {
 			return { maxDepth: parseDepth(env, 1, "RLM_MAX_DEPTH"), source: "env" };
 		}
-		return { maxDepth: 1, source: "default" };
+		return { maxDepth: 2, source: "default" };
 	}
 
 	private _loadPersistedGoalState(): GoalState {
@@ -2737,7 +2737,11 @@ export class AgentSession {
 		message: AssistantMessage,
 	): Promise<AgentMessage | undefined> {
 		const queuedMessage = this._queuedAutonomousThresholdContinuations.get(message);
-		if (queuedMessage && this._postCompactionContinuationMessages.includes(queuedMessage)) {
+		if (
+			queuedMessage &&
+			this._postCompactionContinuationMessages.includes(queuedMessage) &&
+			this._hasUndeliveredThresholdContinuation(queuedMessage)
+		) {
 			return queuedMessage;
 		}
 		const snapshot = this._snapshotAutonomousRuntimeState();
@@ -2767,6 +2771,16 @@ export class AgentSession {
 			}),
 		);
 		return autonomousMessage;
+	}
+
+	private _hasUndeliveredThresholdContinuation(queuedMessage: AgentMessage): boolean {
+		return this._actionStore.unfinishedActions().some((action) => {
+			if (action.payload.kind !== "turn" || primaryDeliveryRecord(action).message !== queuedMessage) {
+				return false;
+			}
+			const state = action.lifecycle.state;
+			return state === "queued" || state === "selected" || state === "preparing" || state === "committing";
+		});
 	}
 
 	private _clearQueuedAutonomousContinuations(
@@ -3472,7 +3486,7 @@ export class AgentSession {
 			}
 		}
 
-		if (event.type === "message_start" && this._isPromptTurnStartMessage(event.message)) {
+		if (event.type === "message_start" && startsAgentRun(event.message)) {
 			this._overflowRecovery = "idle";
 		}
 
@@ -3607,14 +3621,6 @@ export class AgentSession {
 				}
 			}
 		}
-	}
-
-	private _isPromptTurnStartMessage(message: AgentMessage): boolean {
-		return (
-			message.role === "user" ||
-			isAgentSessionMessage(message) ||
-			(message.role === "custom" && message.customType === HEARTBEAT_PROMPT_CUSTOM_TYPE)
-		);
 	}
 
 	/** Resolve the pending retry promise */
@@ -6978,10 +6984,11 @@ export class AgentSession {
 
 	// Added to history (not a nextTurn message) so it also reaches the continue()-driven
 	// auto-compaction resume, which never injects nextTurn messages.
-	private async _notifyKernelStateAfterCompaction(): Promise<void> {
+	private async _syncKernelStateAfterCompaction(): Promise<void> {
 		const provisioner = this._ipythonKernelProvisioner;
 		// No kernel means no state to remind about; only stay silent in that case.
 		if (!provisioner?.hasRunningKernel) return;
+		const pruned = await provisioner.pruneOversizedVariables().catch(() => null);
 		// Bound the probe so a wedged kernel can't stall recovery, and abort it on timeout so
 		// the kernel's serialized execution queue isn't left occupied by a never-resolving cell.
 		const abort = new AbortController();
@@ -7002,9 +7009,13 @@ export class AgentSession {
 				: names.length > 0
 					? ` These names are still defined: ${names.join(", ")}.`
 					: " You have not defined any names yet.";
+		const prunedDetail =
+			pruned && pruned.length > 0
+				? ` Variables above the per-variable snapshot limit were removed: ${pruned.join(", ")}.`
+				: "";
 		const content = [
 			"<ipython_state>",
-			`Your IPython kernel persisted through compaction; all variables, imports, and helpers you defined remain available.${detail}`,
+			`Your IPython kernel persisted through compaction; its remaining variables, imports, and helpers are still available.${prunedDetail}${detail}`,
 			"</ipython_state>",
 		].join("\n");
 		const message = {
@@ -7255,7 +7266,7 @@ export class AgentSession {
 				fromExtension,
 			});
 		}
-		await this._notifyKernelStateAfterCompaction();
+		await this._syncKernelStateAfterCompaction();
 		await this._reapDeletedRlmSubagentRuntimesAfterCompaction();
 
 		return { summary, firstKeptEntryId, tokensBefore, details };
@@ -9100,6 +9111,7 @@ export class AgentSession {
 		spawnCode?: string;
 		sessionDir: string;
 		model: Model<any>;
+		thinkingLevel?: ThinkingLevel;
 	}): CreateRlmSubagentRuntimeOptions {
 		return {
 			parentSession: this,
@@ -9109,7 +9121,8 @@ export class AgentSession {
 			spawnCode: options.spawnCode,
 			sessionDir: options.sessionDir,
 			model: options.model,
-			thinkingLevel: clampThinkingLevel(options.model, this.thinkingLevel) as ThinkingLevel,
+			thinkingLevel:
+				options.thinkingLevel ?? (clampThinkingLevel(options.model, this.thinkingLevel) as ThinkingLevel),
 			serviceTier:
 				this.serviceTier === "priority" && !supportsFastMode(options.model) ? "default" : this.serviceTier,
 			scopedModels: [...this._scopedModels],
@@ -9773,13 +9786,14 @@ export class AgentSession {
 		kwargs: Record<string, unknown> = {},
 		spawnCode?: string,
 	): Promise<RlmSpawnHandle> {
-		const { name: rawName, model: rawModel, ...unsupported } = kwargs;
+		const { name: rawName, model: rawModel, thinking: rawThinking, ...unsupported } = kwargs;
 		const unsupportedKwargs = Object.keys(unsupported);
 		if (unsupportedKwargs.length > 0) {
 			throw new Error(`Unsupported rlm.run kwargs: ${unsupportedKwargs.sort().join(", ")}`);
 		}
 		const requestedSessionName = normalizeRequestedRlmSubagentSessionName(rawName);
 		const requestedModel = normalizeRequestedRlmSubagentModel(rawModel);
+		const requestedThinkingLevel = normalizeRequestedRlmSubagentThinkingLevel(rawThinking);
 		if (requestedSessionName) assertDirectAgentMessageTarget(requestedSessionName);
 		if (this._rlmDepth >= this._rlmMaxDepth) {
 			throw new Error(
@@ -9798,6 +9812,14 @@ export class AgentSession {
 			modelSelection = await this._resolveRlmSubagentModel(requestedModel);
 		} finally {
 			if (requestedSessionName) this._pendingRlmSubagentSessionNames.delete(requestedSessionName);
+		}
+		if (requestedThinkingLevel !== undefined) {
+			const supported = getSupportedThinkingLevels(modelSelection.model) as ThinkingLevel[];
+			if (!supported.includes(requestedThinkingLevel)) {
+				throw new Error(
+					`Requested thinking level "${requestedThinkingLevel}" is not supported by model "${modelSelection.model.provider}/${modelSelection.model.id}"; supported levels: ${supported.join(", ")}`,
+				);
+			}
 		}
 		if (this._disposed || this._disposing) throw new Error("Cannot spawn a subagent after its parent was disposed");
 
@@ -9869,6 +9891,7 @@ export class AgentSession {
 				spawnCode,
 				sessionDir: childSessionDir,
 				model: modelSelection.model,
+				thinkingLevel: requestedThinkingLevel,
 			}),
 			onSessionPublished: publishChildSession,
 		};

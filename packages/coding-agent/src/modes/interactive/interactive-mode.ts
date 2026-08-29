@@ -65,7 +65,11 @@ import {
 	SELF_UPDATE_NOT_ATTEMPTED_EXIT_CODE,
 	VERSION,
 } from "../../config.js";
-import { AGENT_MESSAGE_RECEIVED_PREVIEW_LABEL, isAgentSessionMessage } from "../../core/agent-messages.js";
+import {
+	AGENT_MESSAGE_RECEIVED_PREVIEW_LABEL,
+	isAgentSessionMessage,
+	startsAgentRun,
+} from "../../core/agent-messages.js";
 import { isNoModelsAvailableMessage } from "../../core/auth-guidance.js";
 import {
 	type AgentCronJob,
@@ -92,7 +96,6 @@ import {
 	bashOutputToText,
 	COMPACTION_OUTCOME_CUSTOM_TYPE,
 	createHeartbeatPromptMessage,
-	HEARTBEAT_PROMPT_CUSTOM_TYPE,
 	HEARTBEAT_PROMPT_PREVIEW_LABEL,
 	isCompactionOutcomeMessage,
 	isSessionSlashCommandMessage,
@@ -317,6 +320,19 @@ function hasAgentMessagesExpansion(obj: unknown): obj is AgentMessagesExpandable
 	);
 }
 
+interface EditDiffsExpandable {
+	setEditDiffsExpanded(expanded: boolean): void;
+}
+
+function hasEditDiffsExpansion(obj: unknown): obj is EditDiffsExpandable {
+	return (
+		typeof obj === "object" &&
+		obj !== null &&
+		"setEditDiffsExpanded" in obj &&
+		typeof (obj as EditDiffsExpandable).setEditDiffsExpanded === "function"
+	);
+}
+
 class ExpandableText extends Text implements Expandable {
 	constructor(
 		private readonly getCollapsedText: () => string,
@@ -437,7 +453,7 @@ export class BrandSplashHeader implements Component {
 		};
 		const extraMetadata = this.options.getExtraMetadata?.() ?? [];
 		const hideStartHint = this.options.getHideStartHint?.() ?? false;
-		const startHint = this.options.getStartHint?.() ?? "type to start";
+		const startHint = this.options.getStartHint?.() ?? "type to search sessions";
 		const metaLines = showMeta
 			? [
 					labelled("version", `v${this.version}`),
@@ -861,6 +877,8 @@ export class InteractiveMode {
 	private workingVisible = true;
 	private workingIndicatorOptions: LoaderIndicatorOptions | undefined = undefined;
 	private workingStartedAt: number | undefined = undefined;
+	// Start of the in-flight run; survives loader teardown so the elapsed display doesn't reset on re-entry.
+	private turnStartedAt: number | undefined = undefined;
 	private workingTimer: NodeJS.Timeout | undefined = undefined;
 	private readonly featureHintDeck = new FeatureHintDeck();
 	private currentFeatureHint: string | undefined;
@@ -941,6 +959,7 @@ export class InteractiveMode {
 	// Tool output expansion state
 	private toolOutputExpanded = false;
 	private agentMessagesExpanded = false;
+	private editDiffsExpanded = false;
 
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
@@ -1368,6 +1387,7 @@ export class InteractiveMode {
 						hint("app.model.select", "to select model"),
 						hint("app.tools.expand", "to expand tools"),
 						hint("app.messages.expand", "to expand agent messages"),
+						hint("app.edits.expand", "to expand edit diffs"),
 						hint("app.thinking.toggle", "to expand thinking"),
 						hint("app.subagents.focus", "to inspect subagents"),
 						hint("app.editor.external", "for external editor"),
@@ -1470,6 +1490,7 @@ export class InteractiveMode {
 	 */
 	async run(): Promise<InteractiveModeRunResult> {
 		await this.init();
+		this.restorePromptStashOnOpen();
 
 		// Global, environment-scoped notices (app update, extension updates, tmux setup)
 		// belong on the agents view, not in a conversation. When the agents view already
@@ -2868,6 +2889,7 @@ export class InteractiveMode {
 	private async renderResyncedSession(snapshot: AgentConnectionSnapshot): Promise<void> {
 		const bashFinished = this.isBashRunning() && !snapshot.state.isBashRunning;
 		this.applyConnectionStateSnapshot(snapshot.state);
+		this.restoreTurnStartFromMessages(this.getSessionContextFromConnectionSnapshot(snapshot).messages);
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
 		this.rlmNodeId = snapshot.parent?.childId;
@@ -2975,6 +2997,7 @@ export class InteractiveMode {
 			);
 			component.setExpanded(this.toolOutputExpanded);
 			component.setAgentMessagesExpanded(this.agentMessagesExpanded);
+			component.setEditDiffsExpanded(this.editDiffsExpanded);
 			if (this.startedToolCalls.has(latestToolCall.id)) {
 				component.markExecutionStarted();
 			}
@@ -3165,9 +3188,27 @@ export class InteractiveMode {
 		this.workingTimer.unref?.();
 	}
 
+	// Recover the in-flight run's start from a restored transcript so the elapsed timer survives re-attach.
+	private restoreTurnStartFromMessages(messages: readonly AgentMessage[]): void {
+		this.turnStartedAt = undefined;
+		if (!this.isAgentStreaming()) return;
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const message = messages[i]!;
+			if (startsAgentRun(message)) {
+				this.turnStartedAt = message.timestamp;
+			} else if (message.role === "assistant" && message.stopReason !== "toolUse") {
+				break;
+			}
+		}
+		if (this.turnStartedAt !== undefined && this.workingStartedAt !== undefined) {
+			this.workingStartedAt = this.turnStartedAt;
+			this.updateWorkingLoaderMessage();
+		}
+	}
+
 	private startWorkingLoader(): void {
 		this.stopWorkingLoader();
-		this.workingStartedAt = Date.now();
+		this.workingStartedAt = this.turnStartedAt ?? Date.now();
 		this.loadingAnimation = this.createWorkingLoader();
 		this.statusContainer.addChild(this.loadingAnimation);
 		this.startWorkingTimer();
@@ -3286,11 +3327,7 @@ export class InteractiveMode {
 			this.featureHintRunPending = false;
 			return;
 		}
-		const startsNewRun =
-			message.role === "user" ||
-			isAgentSessionMessage(message) ||
-			(message.role === "custom" && message.customType === HEARTBEAT_PROMPT_CUSTOM_TYPE);
-		if (!startsNewRun) return;
+		if (!startsAgentRun(message)) return;
 
 		this.endFeatureHintRun();
 		if (this.shouldShowWorkingLoader()) {
@@ -4122,6 +4159,7 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.model.select", () => this.showModelSelector());
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
 		this.defaultEditor.onAction("app.messages.expand", () => this.toggleAgentMessageExpansion());
+		this.defaultEditor.onAction("app.edits.expand", () => this.toggleEditDiffExpansion());
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("app.subagents.focus", () => this.focusSubagentSummary());
 		this.defaultEditor.onAction("app.heartbeats.open", () => {
@@ -4178,6 +4216,27 @@ export class InteractiveMode {
 
 	private snapshotPromptStash(text: string): PromptStash {
 		return this.snapshotPromptStashFrom(this.editor, text);
+	}
+
+	private restorePromptStashOnOpen(): void {
+		if (!this.promptStash?.restoreOnOpen) return;
+		// Land the restore notice in its own status block: init may have just posted
+		// a notice (e.g. compaction) that showStatus would otherwise replace.
+		this.lastStatusText = undefined;
+		this.lastStatusSpacer = undefined;
+		this.restorePromptStashIfEditorEmpty();
+	}
+
+	private stashDraftForAgentsView(): void {
+		const text = this.editor.getText();
+		if (!text.trim()) return;
+		// Head of the durable queue so it restores first on return; an existing
+		// manual stash stays queued behind it and keeps its manual-stash semantics.
+		const existing = [this.promptStash, ...(this.promptStashState.queuedStashes ?? [])].filter(
+			(stash): stash is PromptStash => stash !== undefined,
+		);
+		this.promptStash = { ...this.snapshotPromptStash(text), restoreOnOpen: true };
+		this.promptStashState.queuedStashes = existing.length > 0 ? existing : undefined;
 	}
 
 	private handlePromptStash(): void {
@@ -5420,6 +5479,14 @@ export class InteractiveMode {
 			}
 
 			case "message_start":
+				// The run's first starter anchors the elapsed display; mid-turn steering must not restart it.
+				if (this.turnStartedAt === undefined && startsAgentRun(event.message)) {
+					this.turnStartedAt = event.message.timestamp;
+					if (this.workingStartedAt !== undefined) {
+						this.workingStartedAt = event.message.timestamp;
+						this.updateWorkingLoaderMessage();
+					}
+				}
 				if (event.message.role === "custom") {
 					this.addMessageToChat(event.message);
 					this.ui.requestRender();
@@ -5545,6 +5612,7 @@ export class InteractiveMode {
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
 				}
+				this.turnStartedAt = undefined;
 				// Drops the loader; background subagents are shown by the tree, not the loader.
 				this.syncWorkingLoader();
 				if (this.streamingComponent) {
@@ -5919,11 +5987,6 @@ export class InteractiveMode {
 	}
 
 	private async openScopedAgentsView(): Promise<void> {
-		if (this.editor.getText().trim()) {
-			this.focusEditor();
-			this.showStatus("Send, stash, or clear your draft before opening agents");
-			return;
-		}
 		if (!this.options.returnToAgentsView) {
 			this.focusEditor();
 			this.showStatus("The agents view needs the daemon; start without --no-daemon to browse sessions");
@@ -5939,6 +6002,11 @@ export class InteractiveMode {
 		}
 		if (this.keybindings.matches(data, "app.messages.expand")) {
 			this.toggleAgentMessageExpansion();
+			return;
+		}
+		// A raw "\n" is a newline for the editor, not ctrl+j.
+		if (data !== "\n" && this.keybindings.matches(data, "app.edits.expand")) {
+			this.toggleEditDiffExpansion();
 			return;
 		}
 		if (this.keybindings.matches(data, "app.thinking.toggle")) {
@@ -6457,6 +6525,7 @@ export class InteractiveMode {
 						);
 						component.setExpanded(this.toolOutputExpanded);
 						component.setAgentMessagesExpanded(this.agentMessagesExpanded);
+						component.setEditDiffsExpanded(this.editDiffsExpanded);
 						selectLatestToolExpandHint(this.chatContainer.children, component);
 						this.chatContainer.addChild(component);
 						this.registerIpythonToolComponent(content.name, content.id, component);
@@ -6509,6 +6578,7 @@ export class InteractiveMode {
 		this.seedSubagentSummary(snapshot.children);
 		this.setSessionHasMessages(context.messages.length > 0);
 		this.applyConnectionStateSnapshot(state);
+		this.restoreTurnStartFromMessages(context.messages);
 		await this.renderSessionContext(context, {
 			updateFooter: true,
 			populateHistory: true,
@@ -6760,10 +6830,6 @@ export class InteractiveMode {
 	}
 
 	private async requestAgentsView(): Promise<void> {
-		if (this.editor.getText().length > 0) {
-			this.showStatus("Send, stash, or clear your draft before opening agents");
-			return;
-		}
 		if (!this.options.returnToAgentsView) {
 			this.showStatus("The agents view needs the daemon; start without --no-daemon to browse sessions");
 			return;
@@ -6773,6 +6839,7 @@ export class InteractiveMode {
 
 	private async returnToAgentsView(request: InteractiveModeRunResult["type"] = "agents_view"): Promise<void> {
 		if (this.isShuttingDown || this.agentsViewRequest) return;
+		this.stashDraftForAgentsView();
 		this.agentsViewRequest = request;
 		this.isShuttingDown = true;
 		this.unregisterSignalHandlers();
@@ -7142,7 +7209,10 @@ export class InteractiveMode {
 		const earlier = this.getAppKeyDisplay("app.message.moveEarlier");
 		const later = this.getAppKeyDisplay("app.message.moveLater");
 		const queue = this.getAppKeyDisplay("app.message.followUp");
-		return `${lane} ${selected.index + 1} · ${older}/${newer} browse · ${earlier}/${later} reorder · enter steers · ${queue} queues · empty deletes`;
+		return theme.fg(
+			"dim",
+			`${lane} ${selected.index + 1} · ${older}/${newer} browse · ${earlier}/${later} reorder · enter steers · ${queue} queues · empty deletes`,
+		);
 	}
 
 	private updateEditorBorderColor(): void {
@@ -7206,6 +7276,11 @@ export class InteractiveMode {
 		this.applyChatExpansion();
 	}
 
+	private toggleEditDiffExpansion(): void {
+		this.editDiffsExpanded = !this.editDiffsExpanded;
+		this.applyChatExpansion();
+	}
+
 	private setToolsExpanded(expanded: boolean): void {
 		this.toolOutputExpanded = expanded;
 		this.applyChatExpansion();
@@ -7227,6 +7302,9 @@ export class InteractiveMode {
 			}
 			if (hasAgentMessagesExpansion(child)) {
 				child.setAgentMessagesExpanded(this.agentMessagesExpanded);
+			}
+			if (hasEditDiffsExpansion(child)) {
+				child.setEditDiffsExpanded(this.editDiffsExpanded);
 			}
 		}
 		// Expanding/collapsing changes blocks above the viewport, which would
@@ -7882,7 +7960,8 @@ export class InteractiveMode {
 	}
 
 	private handleFastCommand(): void {
-		const unavailableMessage = "Fast mode requires GPT-5.4, GPT-5.5, or GPT-5.6 with ChatGPT authentication";
+		const unavailableMessage =
+			"Fast mode requires GPT-5.4, GPT-5.5, or GPT-5.6 with ChatGPT or OpenAI API key authentication";
 		if (!this.currentModelSupportsFastMode()) {
 			this.showStatus(unavailableMessage);
 			return;
@@ -9332,6 +9411,7 @@ export class InteractiveMode {
 		const selectModel = this.getAppKeyDisplay("app.model.select");
 		const expandTools = this.getAppKeyDisplay("app.tools.expand");
 		const expandMessages = this.getAppKeyDisplay("app.messages.expand");
+		const expandEdits = this.getAppKeyDisplay("app.edits.expand");
 		const toggleThinking = this.getAppKeyDisplay("app.thinking.toggle");
 		const externalEditor = this.getAppKeyDisplay("app.editor.external");
 		const promptStash = this.getAppKeyDisplay("app.prompt.stash");
@@ -9345,7 +9425,7 @@ export class InteractiveMode {
 
 **Controls**
 \`${selectModel}\` select model · \`/effort\` set reasoning · \`${expandTools}\` tool output
-\`${expandMessages}\` agent messages · \`${toggleThinking}\` thinking blocks · \`${promptStash}\` stash prompt · \`${externalEditor}\` edit in \`$EDITOR\`
+\`${expandMessages}\` agent messages · \`${expandEdits}\` edit diffs · \`${toggleThinking}\` thinking blocks · \`${promptStash}\` stash prompt · \`${externalEditor}\` edit in \`$EDITOR\`
 \`${pasteImage}\` paste image
 
 **Help**
@@ -9384,6 +9464,7 @@ ${shortcutsKey ? `\`${shortcutsKey}\` quick shortcuts · ` : ""}\`/hotkeys\` ful
 		const selectModel = this.getAppKeyDisplay("app.model.select");
 		const expandTools = this.getAppKeyDisplay("app.tools.expand");
 		const expandMessages = this.getAppKeyDisplay("app.messages.expand");
+		const expandEdits = this.getAppKeyDisplay("app.edits.expand");
 		const toggleThinking = this.getAppKeyDisplay("app.thinking.toggle");
 		const focusSubagents = this.getAppKeyDisplay("app.subagents.focus");
 		const manageHeartbeats = this.getAppKeyDisplay("app.heartbeats.open");
@@ -9433,6 +9514,7 @@ ${interrupt ? `| \`${interrupt}\` | Interrupt current operation |\n` : ""}${shor
 | \`${selectModel}\` | Open model selector |
 | \`${expandTools}\` | Toggle tool output expansion |
 | \`${expandMessages}\` | Toggle agent message expansion |
+| \`${expandEdits}\` | Toggle edit diff expansion |
 | \`${toggleThinking}\` | Toggle thinking block visibility |
 | \`${focusSubagents}\` | Focus the subagent summary / open the scoped agents view |
 | \`${manageHeartbeats}\` | Manage heartbeats |
