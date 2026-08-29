@@ -1,7 +1,7 @@
 {
   "name": "vsurf-extension-with-deps",
   "private": true,
-  "version": "0.7.6",
+  "version": "0.7.7",
   "type": "module",
   "scripts": {
     "clean": "echo 'nothing to clean'",

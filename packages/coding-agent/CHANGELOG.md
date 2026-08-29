@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.7] - 2026-08-29
 
 - Fixed ACP assistant chunks to identify message boundaries across autonomous turns.
 - Fixed syntax highlighting in the expanded python tool-call view: triple-quoted strings spanning multiple lines now keep their string color instead of only the first line.

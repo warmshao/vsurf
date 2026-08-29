@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.7] - 2026-08-29
 
 - Made the model catalog generator keep the last-good committed catalog when a live-catalog fetch returns a drastically truncated result, so `npm run build` no longer breaks on transient provider/network failures.
 - Enabled /fast with OpenAI API-key authentication for GPT-5.4/GPT-5.5/GPT-5.6 and corrected the GPT-5.6 fast multiplier to 2x.
