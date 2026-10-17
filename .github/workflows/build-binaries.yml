@@ -206,14 +206,14 @@ jobs:
 
       - name: Download npm production packages
         if: env.PUBLISH_PRODUCTION == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: vsurf-npm-production
           path: release-npm/production
 
       - name: Download npm beta packages
         if: env.PUBLISH_BETA == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: vsurf-npm-beta
           path: release-npm/beta
